@@ -2,6 +2,8 @@
 
 **HALO Event Exposure & Training Simulation**
 
+🔴 **Live app: https://sfl-halosim.streamlit.app/**
+
 HaloSim models the distribution of exposure to high-acuity low-occurrence (HALO) events within a
 provider population, and simulates the effect of training programs on population readiness over
 time. It generalizes the methodology from:
@@ -12,19 +14,19 @@ time. It generalizes the methodology from:
 ## Quick start (local)
 
 ```bash
-git clone https://github.com/<your-username>/halosim.git
+git clone https://github.com/EmergencyMind/halosim.git
 cd halosim
 pip install -r requirements.txt
-streamlit run app.py
+streamlit run streamlit_app.py
 ```
 
 Open http://localhost:8501 in your browser.
 
 ## Deploy to Streamlit Community Cloud (free)
 
-1. Push this repo to a **public** GitHub repo (e.g. `github.com/<you>/halosim`)
+1. Fork `EmergencyMind/halosim` on GitHub
 2. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub
-3. Click **New app** → select your repo → set **Main file path** to `app.py`
+3. Click **New app** → select your fork → main file is `streamlit_app.py`
 4. Click **Deploy** — your app is live in ~2 minutes at a public URL
 
 No server, no cost, no configuration.
@@ -101,7 +103,7 @@ If you use HaloSim in research, please cite:
 
 > Dworkis DA. *Code Blue Blindspots: Quantifying Nursing Exposure to Cardiac Arrest in a
 > Community Hospital.* Resuscitation, 2026.  
-> HaloSim: https://github.com/<your-username>/halosim
+> HaloSim: https://sfl-halosim.streamlit.app/ (https://github.com/EmergencyMind/halosim)
 
 ## License
 
