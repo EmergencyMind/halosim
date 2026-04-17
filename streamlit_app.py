@@ -187,6 +187,16 @@ with st.sidebar:
 
     st.divider()
     run_btn = st.button("▶ Run Simulation", type="primary", use_container_width=True)
+
+    if st.session_state.sim_ran and st.session_state.sim_baseline is not None:
+        _sim = st.session_state.sim_baseline
+        st.success(
+            f"✓ {len(_sim.providers):,} providers × {_sim.n_days} days\n\n"
+            "Results in **Exposure Analysis** tab."
+        )
+    else:
+        st.caption("Results will appear in the Exposure Analysis tab.")
+
     st.divider()
     st.caption("Built by [Sangfroid Labs](https://sangfroidlabs.com)")
 
@@ -746,7 +756,8 @@ if run_btn:
     st.session_state.sim_trained = sim_t
     st.session_state.sim_ran = True
 
-    st.sidebar.success(
-        f"✓ Done — {len(providers_list):,} providers × {n_days} days"
+    st.toast(
+        f"Simulation complete — {len(providers_list):,} providers × {n_days} days",
+        icon="✅",
     )
     st.rerun()
