@@ -131,6 +131,24 @@ def _init_state():
 _init_state()
 
 
+def _sim_hash() -> str:
+    """Stable string fingerprint of all simulation-relevant session state."""
+    s = st.session_state
+    parts = [
+        s.n_days, s.n_providers, s.seed,
+        # events
+        s.event_source, s.event_rate, s.event_day_rate, s.event_night_rate,
+        s.seasonal_amplitude, s.seasonal_phase,
+        # schedules
+        s.schedule_source,
+        "|".join(sorted(s.schedule_templates or [])),
+        # uploaded data: use row-count / shape as proxy
+        len(s.events_df) if s.events_df is not None else -1,
+        str(s.schedule_array.shape) if s.schedule_array is not None else "none",
+    ]
+    return ":".join(str(p) for p in parts)
+
+
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
@@ -197,8 +215,7 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 
 if st.session_state.sim_ran and st.session_state.sim_baseline is not None:
-    _current_hash = f"{st.session_state.n_days}:{st.session_state.n_providers}:{st.session_state.seed}"
-    if st.session_state._last_run_hash == _current_hash:
+    if st.session_state._last_run_hash == _sim_hash():
         _sim = st.session_state.sim_baseline
         st.success(
             f"✓ {len(_sim.providers):,} providers × {_sim.n_days} days — "
@@ -757,6 +774,6 @@ if run_btn:
     st.session_state.sim_baseline = sim_b
     st.session_state.sim_trained = sim_t
     st.session_state.sim_ran = True
-    st.session_state._last_run_hash = f"{n_days}:{n_providers}:{int(seed)}"
+    st.session_state._last_run_hash = _sim_hash()
 
     st.rerun()
