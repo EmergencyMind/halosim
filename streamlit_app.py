@@ -121,7 +121,6 @@ def _init_state():
         "sim_baseline": None,
         "sim_trained": None,
         "sim_ran": False,
-        "_switch_to_exposure": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -199,24 +198,6 @@ with st.sidebar:
 tab_events, tab_schedules, tab_exposure, tab_training = st.tabs(
     ["📅 Events", "👥 Schedules", "📊 Exposure Analysis", "🏋️ Training Simulation"]
 )
-
-# Auto-switch to Exposure Analysis tab after a simulation run
-if st.session_state._switch_to_exposure:
-    st.session_state._switch_to_exposure = False
-    st.components.v1.html(
-        """
-        <script>
-        setTimeout(function() {
-            var tabs = window.parent.document.querySelectorAll('[data-testid="stTab"] button');
-            for (var t of tabs) {
-                if (t.innerText.indexOf('Exposure') !== -1) { t.click(); break; }
-            }
-        }, 150);
-        </script>
-        """,
-        height=0,
-    )
-
 
 # ── Tab 1: Events ──────────────────────────────────────────────────────────
 
@@ -715,29 +696,11 @@ if run_btn:
             st.sidebar.error(e)
         st.stop()
 
-    # 3. Run baseline simulation
-    with st.spinner("Running simulation…"):
-        sim_b = Simulation(
-            n_days=n_days,
-            providers=providers_list,
-            schedule=schedule,
-            events=events_df,
-            seed=int(seed),
-            readiness_model=st.session_state.readiness_model,
-            readiness_threshold_days=st.session_state.readiness_threshold,
-            readiness_half_life_days=st.session_state.readiness_half_life,
-            ebbinghaus_b=st.session_state.ebbinghaus_b,
-            step_t2_days=st.session_state.step_t2,
-            step_partial_value=st.session_state.step_partial,
-            training_program="none",
-        )
-        sim_b.run()
-
-    # 4. Run training simulation if a program is selected
+    # 3 & 4. Run simulations — spinner lives in sidebar so it's always visible
     training_prog = st.session_state.training_program
-    if training_prog != "none":
-        with st.spinner("Running training simulation…"):
-            sim_t = Simulation(
+    with st.sidebar:
+        with st.spinner("Simulating…"):
+            sim_b = Simulation(
                 n_days=n_days,
                 providers=providers_list,
                 schedule=schedule,
@@ -749,20 +712,36 @@ if run_btn:
                 ebbinghaus_b=st.session_state.ebbinghaus_b,
                 step_t2_days=st.session_state.step_t2,
                 step_partial_value=st.session_state.step_partial,
-                training_program=training_prog,
-                training_interval_days=st.session_state.training_interval,
-                training_start_day=st.session_state.training_start,
-                training_effect=st.session_state.training_effect,
-                training_equivalence=st.session_state.training_equivalence,
-                training_target_threshold=st.session_state.training_threshold,
+                training_program="none",
             )
-            sim_t.run()
-    else:
-        sim_t = sim_b  # no training — same as baseline
+            sim_b.run()
+
+            if training_prog != "none":
+                sim_t = Simulation(
+                    n_days=n_days,
+                    providers=providers_list,
+                    schedule=schedule,
+                    events=events_df,
+                    seed=int(seed),
+                    readiness_model=st.session_state.readiness_model,
+                    readiness_threshold_days=st.session_state.readiness_threshold,
+                    readiness_half_life_days=st.session_state.readiness_half_life,
+                    ebbinghaus_b=st.session_state.ebbinghaus_b,
+                    step_t2_days=st.session_state.step_t2,
+                    step_partial_value=st.session_state.step_partial,
+                    training_program=training_prog,
+                    training_interval_days=st.session_state.training_interval,
+                    training_start_day=st.session_state.training_start,
+                    training_effect=st.session_state.training_effect,
+                    training_equivalence=st.session_state.training_equivalence,
+                    training_target_threshold=st.session_state.training_threshold,
+                )
+                sim_t.run()
+            else:
+                sim_t = sim_b
 
     st.session_state.sim_baseline = sim_b
     st.session_state.sim_trained = sim_t
     st.session_state.sim_ran = True
-    st.session_state._switch_to_exposure = True
 
     st.rerun()
