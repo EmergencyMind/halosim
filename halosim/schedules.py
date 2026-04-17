@@ -1,13 +1,18 @@
 """
 schedules.py — Provider schedule generation and upload.
 
-Basic:   built-in templates (28-day d/n/o patterns), synthetic population.
-Advanced: custom 28-char pattern builder; CSV/Excel upload.
+Each provider receives a randomly generated individual schedule that fits
+the chosen type. All types produce a (n_providers, n_days) matrix where
+every cell is one of {'d', 'n', 'o'} (day shift / night shift / off).
 
-Every provider-day resolves to one of {'d', 'n', 'o'}.
-  d = day shift (07:00–18:59)
-  n = night shift (19:00–06:59)
-  o = off
+Schedule types
+--------------
+3/7 Day          3 randomly placed day shifts per 7-day week, rest off
+3/7 Night        3 randomly placed night shifts per 7-day week, rest off
+4/7 Day          4 randomly placed day shifts per 7-day week, rest off
+4/7 Night        4 randomly placed night shifts per 7-day week, rest off
+Progressive      3–4 shifts per week, each independently day or night
+Random           Each day drawn from empirical d/n/o weights (Dworkis 2026)
 """
 
 from __future__ import annotations
@@ -17,24 +22,21 @@ import io
 import numpy as np
 import pandas as pd
 
+
 # ---------------------------------------------------------------------------
-# Built-in 28-day templates
+# Schedule type catalogue
 # ---------------------------------------------------------------------------
 
-def _t(s: str) -> str:
-    """Trim/pad a pattern to exactly 28 d/n/o characters."""
-    s = s.replace(" ", "o")
-    return (s[:28] + "o" * 28)[:28]
+SCHEDULE_TYPES: list[str] = [
+    "3/7 Day",
+    "3/7 Night",
+    "4/7 Day",
+    "4/7 Night",
+    "Progressive (day & night mix)",
+    "Random",
+]
 
-
-TEMPLATES: dict[str, str] = {
-    "3-on Day / 4-off":          _t("ddd" + "o"*4 + "ddd" + "o"*4 + "ddd" + "o"*4 + "ddd" + "o"*4),
-    "3-on Night / 4-off":        _t("nnn" + "o"*4 + "nnn" + "o"*4 + "nnn" + "o"*4 + "nnn" + "o"*4),
-    "4-on Day / 3-off":          _t("dddd" + "o"*3 + "dddd" + "o"*3 + "dddd" + "o"*3 + "dddd" + "o"*3),
-    "4-on Night / 3-off":        _t("nnnn" + "o"*3 + "nnnn" + "o"*3 + "nnnn" + "o"*3 + "nnnn" + "o"*3),
-    "Rotating Day→Night":        _t("ddd" + "o" + "nnn" + "o" + "ddd" + "o" + "nnn" + "o" + "ddd" + "o" + "nnn" + "o" + "dd"),
-    "Progressive (nurse-style)": _t("dndodndodndodndodndodndodndo"),
-}
+DEFAULT_SCHEDULE_TYPE = "3/7 Day"
 
 # Empirical d/n/o weights from the paper (Dworkis 2026)
 _DEFAULT_WEIGHTS = {"d": 0.246, "n": 0.230, "o": 0.524}
@@ -48,31 +50,63 @@ _NORM = {"d": "d", "day": "d", "n": "n", "night": "n", "o": "o", "off": "o"}
 
 
 # ---------------------------------------------------------------------------
-# xtender — replicate a 28-day pattern to fill n_days (mirrors R logic)
+# Single-provider schedule generator
 # ---------------------------------------------------------------------------
 
-def xtender(pattern: str, n_days: int) -> np.ndarray:
-    """Repeat a 28-char d/n/o pattern to fill exactly n_days."""
-    base = np.array(list(pattern), dtype="U1")
-    repeats = n_days // 28 + 2
-    extended = np.tile(base, repeats)
-    return extended[:n_days]
+def _generate_one(rng: np.random.Generator, n_days: int, schedule_type: str) -> np.ndarray:
+    """Generate a single provider's schedule array of length n_days."""
+    sched = np.full(n_days, "o", dtype="U1")
+
+    if schedule_type in ("3/7 Day", "3/7 Night", "4/7 Day", "4/7 Night"):
+        k = 3 if schedule_type.startswith("3") else 4
+        char = "d" if "Day" in schedule_type else "n"
+        day = 0
+        while day < n_days:
+            end = min(day + 7, n_days)
+            week_len = end - day
+            k_actual = min(k, week_len)
+            positions = rng.choice(week_len, size=k_actual, replace=False)
+            for p in positions:
+                sched[day + p] = char
+            day += 7
+
+    elif schedule_type == "Progressive (day & night mix)":
+        day = 0
+        while day < n_days:
+            end = min(day + 7, n_days)
+            week_len = end - day
+            k = int(rng.integers(3, 5))   # 3 or 4 shifts this week
+            k_actual = min(k, week_len)
+            positions = rng.choice(week_len, size=k_actual, replace=False)
+            for p in positions:
+                sched[day + p] = rng.choice(["d", "n"])
+            day += 7
+
+    elif schedule_type == "Random":
+        choices = ["d", "n", "o"]
+        probs = np.array([_DEFAULT_WEIGHTS[c] for c in choices])
+        probs /= probs.sum()
+        sched = rng.choice(choices, size=n_days, p=probs)
+
+    return sched
 
 
 # ---------------------------------------------------------------------------
-# Schedule matrix generation
+# Population schedule generation
 # ---------------------------------------------------------------------------
 
 def generate_schedule(
     n_providers: int,
     n_days: int,
-    templates: list[str],
+    schedule_type: str = DEFAULT_SCHEDULE_TYPE,
     seed: int = 42,
-    weights: dict[str, float] | None = None,
 ) -> tuple[np.ndarray, list[str]]:
     """
-    Generate a (n_providers, n_days) schedule matrix by randomly assigning
-    each provider one of the supplied templates.
+    Generate a (n_providers, n_days) schedule matrix.
+
+    Each provider receives an independently randomised schedule that satisfies
+    the constraints of schedule_type.  Seeding is applied at the population
+    level so results are fully reproducible given the same inputs.
 
     Returns (schedule_array, warnings).
     """
@@ -81,53 +115,51 @@ def generate_schedule(
         n_providers = MAX_PROVIDERS
         warnings.append(f"Population capped at {MAX_PROVIDERS:,} providers.")
     if n_providers > WARN_PROVIDERS:
+        warnings.append(f"{n_providers:,} providers — simulation may take a few seconds.")
+
+    if schedule_type not in SCHEDULE_TYPES:
         warnings.append(
-            f"{n_providers:,} providers — simulation may take a few seconds."
+            f"Unknown schedule type '{schedule_type}'; defaulting to '{DEFAULT_SCHEDULE_TYPE}'."
         )
+        schedule_type = DEFAULT_SCHEDULE_TYPE
 
     rng = np.random.default_rng(seed)
-    patterns = [TEMPLATES.get(t, t) for t in templates]
-
-    # Normalise patterns
-    patterns = [(p[:28] + "o" * 28)[:28] for p in patterns]
-
-    if not patterns:
-        patterns = list(TEMPLATES.values())
-
-    # Weight assignment by d/n/o content similarity to empirical weights
-    # (simple: assign uniformly among supplied templates)
-    chosen = rng.integers(0, len(patterns), size=n_providers)
-
     schedule = np.empty((n_providers, n_days), dtype="U1")
-    for i, idx in enumerate(chosen):
-        schedule[i] = xtender(patterns[idx], n_days)
+    for i in range(n_providers):
+        schedule[i] = _generate_one(rng, n_days, schedule_type)
 
     return schedule, warnings
 
 
-def generate_synthetic_population(
+# ---------------------------------------------------------------------------
+# Custom 28-day pattern (Advanced mode)
+# ---------------------------------------------------------------------------
+
+def generate_from_pattern(
     n_providers: int,
     n_days: int,
+    pattern: str,
     seed: int = 42,
-    weights: dict[str, float] | None = None,
 ) -> tuple[np.ndarray, list[str]]:
     """
-    Generate synthetic schedules using empirical d/n/o weights (gensynprov logic
-    from waldo_v2_production_070125.R).  Each provider-day is independently sampled.
+    Generate schedules by tiling a custom 28-char d/n/o pattern across n_days.
+    Each provider's schedule is identical (pattern determines the template).
     """
     warnings: list[str] = []
     if n_providers > MAX_PROVIDERS:
         n_providers = MAX_PROVIDERS
         warnings.append(f"Population capped at {MAX_PROVIDERS:,} providers.")
 
-    w = weights or _DEFAULT_WEIGHTS
-    choices = list(w.keys())
-    probs = np.array([w[c] for c in choices])
-    probs = probs / probs.sum()
+    pattern = (pattern[:28] + "o" * 28)[:28]
+    base = np.array(list(pattern), dtype="U1")
+    repeats = n_days // 28 + 2
+    row = np.tile(base, repeats)[:n_days]
 
-    rng = np.random.default_rng(seed)
-    flat = rng.choice(choices, size=n_providers * n_days, p=probs)
-    return flat.reshape(n_providers, n_days), warnings
+    schedule = np.empty((n_providers, n_days), dtype="U1")
+    for i in range(n_providers):
+        schedule[i] = row
+
+    return schedule, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +176,7 @@ def load_schedule_from_upload(
     Parse and validate an uploaded schedule file.
 
     Required columns: provider_id, date (YYYY-MM-DD), shift_type (d/day/n/night/o/off)
-    Missing dates for a provider → filled as 'o' (off) with a warning.
+    Missing dates for a provider are filled as 'o' (off).
 
     Returns (schedule_array, provider_ids, errors).
     """
@@ -167,7 +199,6 @@ def load_schedule_from_upload(
             "Required: provider_id, date, shift_type"
         ]
 
-    # Normalise shift_type
     df["shift_type"] = df["shift_type"].astype(str).str.strip().str.lower()
     bad = set(df["shift_type"].unique()) - VALID_SHIFT_TYPES
     if bad:
@@ -177,13 +208,11 @@ def load_schedule_from_upload(
         ]
     df["shift_type"] = df["shift_type"].map(_NORM)
 
-    # Parse dates
     try:
         df["date"] = pd.to_datetime(df["date"]).dt.date
     except Exception:
         return None, [], ["Could not parse 'date' column — expected format YYYY-MM-DD."]
 
-    start = pd.to_datetime(start_date).date()
     all_dates = [
         (pd.to_datetime(start_date) + pd.Timedelta(days=i)).date()
         for i in range(n_days)
@@ -210,7 +239,6 @@ def load_schedule_from_upload(
             continue
         schedule[p_idx[pid], date_to_idx[d]] = row["shift_type"]
 
-    # Warn about coverage gaps
     n_off_by_default = int((schedule == "o").sum())
     total = n_providers * n_days
     if n_off_by_default / total > 0.1:

@@ -14,9 +14,10 @@ import streamlit as st
 
 from halosim.events import generate_events, load_events_from_upload
 from halosim.schedules import (
-    TEMPLATES,
+    SCHEDULE_TYPES,
+    DEFAULT_SCHEDULE_TYPE,
     generate_schedule,
-    generate_synthetic_population,
+    generate_from_pattern,
     load_schedule_from_upload,
     MAX_PROVIDERS,
     WARN_PROVIDERS,
@@ -97,8 +98,8 @@ def _init_state():
         "events_warnings": [],
         "events_errors": [],
         # schedules
-        "schedule_source": "Built-in templates",
-        "schedule_templates": ["3-on Day / 4-off"],
+        "schedule_source": "Generate schedules",
+        "schedule_type": DEFAULT_SCHEDULE_TYPE,
         "schedule_array": None,
         "schedule_providers": None,
         "schedule_warnings": [],
@@ -143,7 +144,7 @@ def _sim_hash() -> str:
         s.seasonal_amplitude, s.seasonal_phase,
         # schedules
         s.schedule_source,
-        "|".join(sorted(s.schedule_templates or [])),
+        s.get("schedule_type", DEFAULT_SCHEDULE_TYPE),
         # uploaded data: use row-count / shape as proxy
         len(s.events_df) if s.events_df is not None else -1,
         str(s.schedule_array.shape) if s.schedule_array is not None else "none",
@@ -375,9 +376,13 @@ with tab_events:
 with tab_schedules:
     st.header("Provider Schedule Configuration")
 
-    sched_options = ["Built-in templates", "Upload CSV / Excel"]
+    sched_options = ["Generate schedules", "Upload CSV / Excel"]
     if advanced:
         sched_options.append("Custom 28-day pattern")
+
+    # Migrate legacy session state value
+    if st.session_state.schedule_source == "Built-in templates":
+        st.session_state.schedule_source = "Generate schedules"
 
     sched_source = st.radio(
         "Schedule source",
@@ -391,39 +396,27 @@ with tab_schedules:
     )
     st.session_state.schedule_source = sched_source
 
-    if sched_source == "Built-in templates":
-        selected = st.multiselect(
-            "Schedule mix — each provider is randomly assigned one of these templates",
-            list(TEMPLATES.keys()),
-            default=st.session_state.schedule_templates,
+    if sched_source == "Generate schedules":
+        _type_descriptions = {
+            "3/7 Day":   "3 randomly placed day shifts per 7-day week, rest off",
+            "3/7 Night": "3 randomly placed night shifts per 7-day week, rest off",
+            "4/7 Day":   "4 randomly placed day shifts per 7-day week, rest off",
+            "4/7 Night": "4 randomly placed night shifts per 7-day week, rest off",
+            "Progressive (day & night mix)":
+                "3-4 shifts per week, each randomly assigned day or night",
+            "Random":    "Each day drawn from empirical d/n/o weights (Dworkis 2026: 25% day, 23% night, 52% off)",
+        }
+        current_type = st.session_state.get("schedule_type", DEFAULT_SCHEDULE_TYPE)
+        if current_type not in SCHEDULE_TYPES:
+            current_type = DEFAULT_SCHEDULE_TYPE
+
+        selected_type = st.selectbox(
+            "Schedule type",
+            SCHEDULE_TYPES,
+            index=SCHEDULE_TYPES.index(current_type),
         )
-        if selected:
-            st.session_state.schedule_templates = selected
-
-        if advanced:
-            with st.expander("Template details"):
-                for name, pat in TEMPLATES.items():
-                    d_pct = pat.count("d") / 28 * 100
-                    n_pct = pat.count("n") / 28 * 100
-                    o_pct = pat.count("o") / 28 * 100
-                    st.caption(
-                        f"**{name}** — Day: {d_pct:.0f}%, Night: {n_pct:.0f}%, "
-                        f"Off: {o_pct:.0f}%"
-                    )
-                    st.code(pat, language=None)
-
-        st.divider()
-        with st.expander("Use pre-built sample schedule instead"):
-            if st.button("Use sample_schedule.csv (20 providers)"):
-                raw = (DATA_DIR / "sample_schedule.csv").read_bytes()
-                arr, providers, errs = load_schedule_from_upload(
-                    raw, "sample_schedule.csv", n_days
-                )
-                if arr is not None:
-                    st.session_state.schedule_array = arr
-                    st.session_state.schedule_providers = providers
-                    st.session_state.schedule_source = "Upload CSV / Excel"
-                    st.rerun()
+        st.session_state.schedule_type = selected_type
+        st.caption(_type_descriptions[selected_type])
 
     elif sched_source == "Upload CSV / Excel":
         uploaded_s = st.file_uploader(
@@ -454,8 +447,21 @@ with tab_schedules:
                 f"✓ Schedule loaded: {arr.shape[0]} providers × {arr.shape[1]} days"
             )
 
+        st.divider()
+        with st.expander("Use pre-built sample schedule"):
+            if st.button("Load sample_schedule.csv (20 providers)"):
+                raw = (DATA_DIR / "sample_schedule.csv").read_bytes()
+                arr, providers, errs = load_schedule_from_upload(
+                    raw, "sample_schedule.csv", n_days
+                )
+                if arr is not None:
+                    st.session_state.schedule_array = arr
+                    st.session_state.schedule_providers = providers
+                    st.rerun()
+
     elif sched_source == "Custom 28-day pattern":
-        st.caption("Enter a 28-character pattern using d (day), n (night), o (off).")
+        st.caption("Enter a 28-character pattern using d (day), n (night), o (off). "
+                   "The pattern tiles across the simulation window; all providers share the same template.")
         pattern = st.text_input(
             "28-day pattern",
             value="dddoooodddoooodddoooodddoooo",
@@ -472,7 +478,7 @@ with tab_schedules:
             n_p = pattern.count("n") / 28 * 100
             o_p = pattern.count("o") / 28 * 100
             st.caption(f"Day: {d_p:.0f}% | Night: {n_p:.0f}% | Off: {o_p:.0f}%")
-            st.session_state.schedule_templates = [pattern]
+            st.session_state.schedule_type = pattern
 
 
 # ── Tab 3: Exposure Analysis ───────────────────────────────────────────────
@@ -842,34 +848,34 @@ if run_btn:
 
     # 2. Build schedule
     sched_source = st.session_state.schedule_source
+    s_warn = []
     if sched_source == "Upload CSV / Excel" and st.session_state.schedule_array is not None:
-        schedule = st.session_state.schedule_array[:n_providers, :n_days] \
-            if st.session_state.schedule_array.shape[1] >= n_days else None
-        providers_list = st.session_state.schedule_providers[:n_providers]
-        if schedule is None or schedule.shape[1] < n_days:
-            # Rebuild if window longer than upload
+        arr = st.session_state.schedule_array
+        if arr.shape[1] >= n_days:
+            schedule = arr[:n_providers, :n_days]
+        else:
             schedule, s_warn = generate_schedule(
                 n_providers=n_providers,
                 n_days=n_days,
-                templates=st.session_state.schedule_templates or list(TEMPLATES.keys()),
+                schedule_type=st.session_state.get("schedule_type", DEFAULT_SCHEDULE_TYPE),
                 seed=int(seed),
             )
-            providers_list = [f"P{i+1:04d}" for i in range(n_providers)]
+        providers_list = (st.session_state.schedule_providers or [])[:n_providers] \
+            or [f"P{i+1:04d}" for i in range(n_providers)]
     elif sched_source == "Custom 28-day pattern":
-        templates_to_use = st.session_state.schedule_templates or ["dddoooodddoooodddoooodddoooo"]
-        schedule, s_warn = generate_schedule(
+        pattern = st.session_state.get("schedule_type", "dddoooodddoooodddoooodddoooo")
+        schedule, s_warn = generate_from_pattern(
             n_providers=n_providers,
             n_days=n_days,
-            templates=templates_to_use,
+            pattern=pattern,
             seed=int(seed),
         )
         providers_list = [f"P{i+1:04d}" for i in range(n_providers)]
     else:
-        templates_to_use = st.session_state.schedule_templates or list(TEMPLATES.keys())
         schedule, s_warn = generate_schedule(
             n_providers=n_providers,
             n_days=n_days,
-            templates=templates_to_use,
+            schedule_type=st.session_state.get("schedule_type", DEFAULT_SCHEDULE_TYPE),
             seed=int(seed),
         )
         providers_list = [f"P{i+1:04d}" for i in range(n_providers)]
