@@ -121,6 +121,7 @@ def _init_state():
         "sim_baseline": None,
         "sim_trained": None,
         "sim_ran": False,
+        "_switch_to_exposure": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -187,16 +188,6 @@ with st.sidebar:
 
     st.divider()
     run_btn = st.button("▶ Run Simulation", type="primary", use_container_width=True)
-
-    if st.session_state.sim_ran and st.session_state.sim_baseline is not None:
-        _sim = st.session_state.sim_baseline
-        st.success(
-            f"✓ {len(_sim.providers):,} providers × {_sim.n_days} days\n\n"
-            "Results in **Exposure Analysis** tab."
-        )
-    else:
-        st.caption("Results will appear in the Exposure Analysis tab.")
-
     st.divider()
     st.caption("Built by [Sangfroid Labs](https://sangfroidlabs.com)")
 
@@ -208,6 +199,23 @@ with st.sidebar:
 tab_events, tab_schedules, tab_exposure, tab_training = st.tabs(
     ["📅 Events", "👥 Schedules", "📊 Exposure Analysis", "🏋️ Training Simulation"]
 )
+
+# Auto-switch to Exposure Analysis tab after a simulation run
+if st.session_state._switch_to_exposure:
+    st.session_state._switch_to_exposure = False
+    st.components.v1.html(
+        """
+        <script>
+        setTimeout(function() {
+            var tabs = window.parent.document.querySelectorAll('[data-testid="stTab"] button');
+            for (var t of tabs) {
+                if (t.innerText.indexOf('Exposure') !== -1) { t.click(); break; }
+            }
+        }, 150);
+        </script>
+        """,
+        height=0,
+    )
 
 
 # ── Tab 1: Events ──────────────────────────────────────────────────────────
@@ -755,9 +763,6 @@ if run_btn:
     st.session_state.sim_baseline = sim_b
     st.session_state.sim_trained = sim_t
     st.session_state.sim_ran = True
+    st.session_state._switch_to_exposure = True
 
-    st.toast(
-        f"Simulation complete — {len(providers_list):,} providers × {n_days} days",
-        icon="✅",
-    )
     st.rerun()
