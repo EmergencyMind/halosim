@@ -235,7 +235,68 @@ def plot_individual_swimlanes(
 
 
 # ---------------------------------------------------------------------------
-# 5. Exposure count histogram
+# 5. Training program comparison
+# ---------------------------------------------------------------------------
+
+_PROGRAM_COLORS = {
+    "No training":       _GREY,
+    "Monthly (28d)":     _GREEN,
+    "Bi-monthly (56d)":  _BLUE,
+    "Quarterly (84d)":   _ORANGE,
+    "Custom":            "#7C3AED",
+    "Targeted":          "#0891B2",
+}
+_PROGRAM_DASH = {
+    "No training": "dot",
+}
+
+
+def plot_training_comparison(
+    programs: dict[str, np.ndarray],
+    n_days: int,
+    rolling_days: int = 30,
+    start_date: str = "2024-01-01",
+) -> go.Figure:
+    """
+    Overlay readiness timeseries for multiple training programs on one chart.
+    programs: {label: proportion_ready_on_shift array}
+    """
+    dates = pd.date_range(start_date, periods=n_days, freq="D")
+
+    def smooth(arr):
+        return pd.Series(arr).rolling(rolling_days, min_periods=1, center=True).mean().values
+
+    fig = go.Figure()
+    for label, arr in programs.items():
+        color = _PROGRAM_COLORS.get(label, _BLUE)
+        dash = _PROGRAM_DASH.get(label, "solid")
+        width = 1.5 if label == "No training" else 2
+        fig.add_trace(go.Scatter(
+            x=dates,
+            y=smooth(arr) * 100,
+            mode="lines",
+            name=label,
+            line=dict(color=color, width=width, dash=dash),
+        ))
+
+    fig.update_layout(
+        title=f"Training program comparison ({rolling_days}-day rolling mean, on-shift providers)",
+        xaxis_title="Date",
+        yaxis_title="% ready",
+        yaxis=dict(range=[0, 105]),
+        height=420,
+        legend=dict(x=0.01, y=0.05),
+        margin=dict(t=60, b=40),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+    )
+    fig.update_xaxes(gridcolor="#E2E8F0")
+    fig.update_yaxes(gridcolor="#E2E8F0")
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 6. Exposure count histogram
 # ---------------------------------------------------------------------------
 
 def plot_exposure_count_histogram(results_df: pd.DataFrame) -> go.Figure:

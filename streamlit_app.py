@@ -28,7 +28,9 @@ from halosim.viz import (
     plot_individual_swimlanes,
     plot_readiness_timeseries,
     plot_threshold_sweep,
+    plot_training_comparison,
 )
+from halosim.report import generate_pdf
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -147,6 +149,38 @@ def _sim_hash() -> str:
         str(s.schedule_array.shape) if s.schedule_array is not None else "none",
     ]
     return ":".join(str(p) for p in parts)
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def _run_sim(
+    n_days, providers_tuple, schedule, events_df, seed,
+    readiness_model, readiness_threshold, readiness_half_life,
+    ebbinghaus_b, step_t2, step_partial,
+    training_program, training_interval, training_start,
+    training_effect, training_equivalence, training_threshold,
+) -> "Simulation":
+    """Run one simulation and cache the result by all inputs."""
+    sim = Simulation(
+        n_days=n_days,
+        providers=list(providers_tuple),
+        schedule=schedule,
+        events=events_df,
+        seed=seed,
+        readiness_model=readiness_model,
+        readiness_threshold_days=readiness_threshold,
+        readiness_half_life_days=readiness_half_life,
+        ebbinghaus_b=ebbinghaus_b,
+        step_t2_days=step_t2,
+        step_partial_value=step_partial,
+        training_program=training_program,
+        training_interval_days=training_interval,
+        training_start_day=training_start,
+        training_effect=training_effect,
+        training_equivalence=training_equivalence,
+        training_target_threshold=training_threshold,
+    )
+    sim.run()
+    return sim
 
 
 # ---------------------------------------------------------------------------
@@ -520,6 +554,18 @@ with tab_exposure:
             c4.metric("% with zero exposures",
                       f"{100 * n_zero / n:.1f}%")
 
+            # Percentile table
+            st.divider()
+            st.subheader("Gap statistics — percentiles")
+            _pcts = [5, 25, 50, 75, 95]
+            _pct_df = pd.DataFrame({
+                "Percentile": [f"{p}th" for p in _pcts],
+                "Max gap (days)": [f"{np.percentile(rdf['gap_max'].dropna(), p):.0f}" for p in _pcts],
+                "Median gap (days)": [f"{np.percentile(rdf['gap_median'].dropna(), p):.0f}" for p in _pcts],
+                "Exposures / provider": [f"{np.percentile(rdf['n_events'].dropna(), p):.1f}" for p in _pcts],
+            })
+            st.dataframe(_pct_df, use_container_width=True, hide_index=True)
+
             st.divider()
             st.plotly_chart(plot_exposure_count_histogram(rdf),
                             use_container_width=True)
@@ -527,6 +573,25 @@ with tab_exposure:
                             use_container_width=True)
             st.plotly_chart(plot_threshold_sweep(rdf),
                             use_container_width=True)
+
+            # Interpretation callout for threshold sweep
+            _pct_90 = 100 * (rdf["gap_max"].fillna(9999) > 90).mean()
+            if _pct_90 >= 80:
+                _interp = (f"**{_pct_90:.0f}%** of providers exceed the 90-day gap benchmark — "
+                           "consistent with the paper's community hospital finding of 98% "
+                           "(Dworkis 2026). Training may be needed to compensate for "
+                           "infrequent live exposure.")
+            elif _pct_90 >= 40:
+                _interp = (f"**{_pct_90:.0f}%** of providers exceed the 90-day gap benchmark. "
+                           "Your event rate or shift density differs from the paper's community "
+                           "hospital setting. Evaluate whether current training frequency "
+                           "maintains adequate readiness.")
+            else:
+                _interp = (f"**{_pct_90:.0f}%** of providers exceed the 90-day gap benchmark — "
+                           "relatively low. Your event rate may be higher than a typical community "
+                           "hospital, suggesting live exposure alone contributes meaningfully to "
+                           "readiness.")
+            st.info(_interp)
 
             with st.expander("Individual provider swimlanes (random sample)"):
                 n_swim = st.slider("Providers to display", 10, 80, 30, key="swimlane_n")
@@ -541,14 +606,45 @@ with tab_exposure:
                 )
 
             st.divider()
-            with st.expander("Download results table"):
+            _dl1, _dl2 = st.columns(2)
+            with _dl1:
                 csv = rdf.to_csv(index=False).encode()
                 st.download_button(
                     "Download per-provider gap statistics (CSV)",
                     data=csv,
                     file_name="halosim_exposure_results.csv",
                     mime="text/csv",
+                    use_container_width=True,
                 )
+            with _dl2:
+                if st.button("Generate PDF report", use_container_width=True):
+                    with st.spinner("Rendering report…"):
+                        try:
+                            _prog_label = st.session_state.get("_training_prog_label",
+                                                               "None (exposure only)")
+                            _pdf_bytes = generate_pdf(
+                                sim_b=st.session_state.sim_baseline,
+                                sim_t=st.session_state.sim_trained,
+                                params={
+                                    "n_days": sim.n_days,
+                                    "n_providers": len(sim.providers),
+                                    "seed": sim.seed,
+                                    "event_source": st.session_state.event_source,
+                                    "event_rate": st.session_state.event_rate,
+                                    "readiness_model": st.session_state.readiness_model,
+                                    "readiness_threshold": st.session_state.readiness_threshold,
+                                },
+                                training_program_label=_prog_label,
+                            )
+                            st.download_button(
+                                "Download PDF",
+                                data=_pdf_bytes,
+                                file_name=f"halosim_report_{sim.n_days}d_{len(sim.providers)}p.pdf",
+                                mime="application/pdf",
+                                use_container_width=True,
+                            )
+                        except Exception as _e:
+                            st.error(f"PDF generation failed: {_e}")
 
 
 # ── Tab 4: Training Simulation ─────────────────────────────────────────────
@@ -644,6 +740,60 @@ with tab_training:
             )
             st.plotly_chart(fig, use_container_width=True)
 
+            # Interpretation callout
+            _improve = t_mean - b_mean
+            if abs(_improve) < 1:
+                _t_interp = ("Training had minimal effect on on-shift readiness — "
+                             "live exposure alone may be sufficient at this event rate.")
+            elif _improve > 0:
+                _t_interp = (
+                    f"Training raised average on-shift readiness by **{_improve:.1f} pp** "
+                    f"({b_mean:.0f}% → {t_mean:.0f}%). "
+                    f"{n_train:,} training events were delivered across the simulation window."
+                )
+            else:
+                _t_interp = (
+                    f"Readiness with training ({t_mean:.0f}%) is similar to baseline "
+                    f"({b_mean:.0f}%). Consider adjusting training frequency or model parameters."
+                )
+            st.info(_t_interp)
+
+            # Training program comparison
+            st.divider()
+            with st.expander("Compare training programs"):
+                _compare_options = {
+                    "No training": "none",
+                    "Monthly (28d)": "monthly",
+                    "Bi-monthly (56d)": "bimonthly",
+                    "Quarterly (84d)": "quarterly",
+                }
+                _selected = st.multiselect(
+                    "Programs to compare",
+                    list(_compare_options.keys()),
+                    default=["No training", "Monthly (28d)", "Quarterly (84d)"],
+                    key="compare_programs",
+                )
+                _roll2 = st.slider("Rolling mean (days)", 1, 90, roll, key="compare_roll")
+                if _selected and st.session_state.sim_baseline is not None:
+                    _sb = st.session_state.sim_baseline
+                    _compare_data: dict[str, np.ndarray] = {}
+                    _s = st.session_state
+                    for _lbl in _selected:
+                        _prog = _compare_options[_lbl]
+                        _csim = _run_sim(
+                            _sb.n_days, tuple(_sb.providers), _sb.schedule, _sb.events,
+                            _sb.seed,
+                            _s.readiness_model, _s.readiness_threshold,
+                            _s.readiness_half_life, _s.ebbinghaus_b,
+                            _s.step_t2, _s.step_partial,
+                            _prog, 28, 0, "full", 1.0, 0.5,
+                        )
+                        _compare_data[_lbl] = _csim.proportion_ready_on_shift
+                    st.plotly_chart(
+                        plot_training_comparison(_compare_data, _sb.n_days, _roll2),
+                        use_container_width=True,
+                    )
+
             if advanced:
                 with st.expander("Also show: all providers (including off-shift)"):
                     fig2 = plot_readiness_timeseries(
@@ -729,45 +879,28 @@ if run_btn:
             st.sidebar.error(e)
         st.stop()
 
-    # 3 & 4. Run simulations
+    # 3 & 4. Run simulations (results cached by _run_sim)
     training_prog = st.session_state.training_program
-    sim_b = Simulation(
-        n_days=n_days,
-        providers=providers_list,
-        schedule=schedule,
-        events=events_df,
-        seed=int(seed),
-        readiness_model=st.session_state.readiness_model,
-        readiness_threshold_days=st.session_state.readiness_threshold,
-        readiness_half_life_days=st.session_state.readiness_half_life,
-        ebbinghaus_b=st.session_state.ebbinghaus_b,
-        step_t2_days=st.session_state.step_t2,
-        step_partial_value=st.session_state.step_partial,
-        training_program="none",
+    _s = st.session_state
+    _common = dict(
+        n_days=n_days, providers_tuple=tuple(providers_list),
+        schedule=schedule, events_df=events_df, seed=int(seed),
+        readiness_model=_s.readiness_model,
+        readiness_threshold=_s.readiness_threshold,
+        readiness_half_life=_s.readiness_half_life,
+        ebbinghaus_b=_s.ebbinghaus_b,
+        step_t2=_s.step_t2, step_partial=_s.step_partial,
+        training_interval=_s.training_interval,
+        training_start=_s.training_start,
+        training_effect=_s.training_effect,
+        training_equivalence=_s.training_equivalence,
+        training_threshold=_s.training_threshold,
     )
-    sim_b.run()
+
+    sim_b = _run_sim(**_common, training_program="none")
 
     if training_prog != "none":
-        sim_t = Simulation(
-            n_days=n_days,
-            providers=providers_list,
-            schedule=schedule,
-            events=events_df,
-            seed=int(seed),
-            readiness_model=st.session_state.readiness_model,
-            readiness_threshold_days=st.session_state.readiness_threshold,
-            readiness_half_life_days=st.session_state.readiness_half_life,
-            ebbinghaus_b=st.session_state.ebbinghaus_b,
-            step_t2_days=st.session_state.step_t2,
-            step_partial_value=st.session_state.step_partial,
-            training_program=training_prog,
-            training_interval_days=st.session_state.training_interval,
-            training_start_day=st.session_state.training_start,
-            training_effect=st.session_state.training_effect,
-            training_equivalence=st.session_state.training_equivalence,
-            training_target_threshold=st.session_state.training_threshold,
-        )
-        sim_t.run()
+        sim_t = _run_sim(**_common, training_program=training_prog)
     else:
         sim_t = sim_b
 
@@ -775,5 +908,13 @@ if run_btn:
     st.session_state.sim_trained = sim_t
     st.session_state.sim_ran = True
     st.session_state._last_run_hash = _sim_hash()
+    # Store training label for PDF report
+    _prog_labels = {v: k for k, v in {
+        "None (exposure only)": "none", "Monthly (every 28 days)": "monthly",
+        "Bi-monthly (every 56 days)": "bimonthly", "Quarterly (every 84 days)": "quarterly",
+        "Custom interval": "custom",
+        "Targeted (train undertrained providers only)": "targeted",
+    }.items()}
+    st.session_state["_training_prog_label"] = _prog_labels.get(training_prog, training_prog)
 
     st.rerun()
