@@ -11,7 +11,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import streamlit as st
-from PIL import Image
 
 from halosim.events import generate_events, load_events_from_upload
 from halosim.schedules import (
@@ -38,10 +37,9 @@ from halosim.viz import (
 ASSETS_DIR = Path(__file__).parent / "assets"
 DATA_DIR = Path(__file__).parent / "data"
 
-_logo = Image.open(ASSETS_DIR / "logo.png")
 st.set_page_config(
     page_title="HaloSim",
-    page_icon=_logo,
+    page_icon="⚕️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -50,17 +48,33 @@ st.markdown(
     """
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&display=swap" rel="stylesheet">
     <style>
-      html, body, [class*="st-"], .stMarkdown, .stButton > button,
-      label, .stSelectbox, .stSlider, .stRadio {
+      html, body { font-family: 'DM Sans', sans-serif !important; }
+      p, span, div, label, button, input, select, textarea,
+      .stMarkdown, .stButton > button, .stExpander summary p {
         font-family: 'DM Sans', sans-serif !important;
       }
-      section[data-testid="stSidebar"] .block-container { padding-top: 1.25rem; }
+      /* Compact sidebar */
+      section[data-testid="stSidebar"] .block-container {
+        padding-top: 0.75rem !important;
+        padding-bottom: 0.5rem !important;
+      }
+      section[data-testid="stSidebar"] hr { margin: 0.3rem 0 !important; }
+      section[data-testid="stSidebar"] h3 {
+        margin-top: 0.1rem !important;
+        margin-bottom: 0.1rem !important;
+        font-size: 0.9rem !important;
+      }
+      section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+        gap: 0.2rem !important;
+      }
+      /* Metric cards */
       [data-testid="stMetric"] {
         background: #F8FAFC;
         border: 1px solid #E2E8F0;
         border-radius: 8px;
         padding: 0.75rem 1rem;
       }
+      /* Tab strip */
       [data-testid="stTabs"] button { font-weight: 500; }
     </style>
     """,
@@ -129,9 +143,12 @@ _init_state()
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.image(str(ASSETS_DIR / "logo.png"), width=72)
-    st.markdown("### HaloSim")
-    st.caption("HALO Event Exposure & Training Simulation")
+    _hdr_logo, _hdr_text = st.columns([1, 2.5])
+    with _hdr_logo:
+        st.image(str(ASSETS_DIR / "logo.png"), width=56)
+    with _hdr_text:
+        st.markdown("**HaloSim**")
+        st.caption("HALO Event Exposure\n& Training Simulation")
     st.divider()
 
     mode = st.radio(
