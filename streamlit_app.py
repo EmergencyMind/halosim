@@ -39,33 +39,25 @@ DATA_DIR = Path(__file__).parent / "data"
 
 st.set_page_config(
     page_title="HaloSim",
-    page_icon="⚕️",
+    page_icon="https://raw.githubusercontent.com/EmergencyMind/halosim/master/assets/logo.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 st.markdown(
     """
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-      html, body { font-family: 'DM Sans', sans-serif !important; }
-      p, span, div, label, button, input, select, textarea,
-      .stMarkdown, .stButton > button, .stExpander summary p {
-        font-family: 'DM Sans', sans-serif !important;
-      }
-      /* Compact sidebar */
+      html, body, p, li, td, th, label, button { font-family: 'DM Sans', sans-serif !important; }
+      /* Sidebar: reduce top padding and divider margins only */
       section[data-testid="stSidebar"] .block-container {
-        padding-top: 0.75rem !important;
-        padding-bottom: 0.5rem !important;
+        padding-top: 1rem !important;
+        padding-bottom: 0.75rem !important;
       }
-      section[data-testid="stSidebar"] hr { margin: 0.3rem 0 !important; }
+      section[data-testid="stSidebar"] hr { margin: 0.5rem 0 !important; }
       section[data-testid="stSidebar"] h3 {
-        margin-top: 0.1rem !important;
-        margin-bottom: 0.1rem !important;
         font-size: 0.9rem !important;
-      }
-      section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-        gap: 0.2rem !important;
+        margin-bottom: 0.25rem !important;
       }
       /* Metric cards */
       [data-testid="stMetric"] {
