@@ -121,6 +121,7 @@ def _init_state():
         "sim_baseline": None,
         "sim_trained": None,
         "sim_ran": False,
+        "_last_run_hash": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -190,6 +191,21 @@ with st.sidebar:
     st.divider()
     st.caption("Built by [Sangfroid Labs](https://sangfroidlabs.com)")
 
+
+# ---------------------------------------------------------------------------
+# Result banner (above tabs — always visible regardless of active tab)
+# ---------------------------------------------------------------------------
+
+if st.session_state.sim_ran and st.session_state.sim_baseline is not None:
+    _current_hash = f"{st.session_state.n_days}:{st.session_state.n_providers}:{st.session_state.seed}"
+    if st.session_state._last_run_hash == _current_hash:
+        _sim = st.session_state.sim_baseline
+        st.success(
+            f"✓ {len(_sim.providers):,} providers × {_sim.n_days} days — "
+            "results in the **Exposure Analysis** tab."
+        )
+    else:
+        st.warning("Settings changed — click **▶ Run Simulation** to update results.")
 
 # ---------------------------------------------------------------------------
 # Tabs
@@ -696,52 +712,51 @@ if run_btn:
             st.sidebar.error(e)
         st.stop()
 
-    # 3 & 4. Run simulations — spinner lives in sidebar so it's always visible
+    # 3 & 4. Run simulations
     training_prog = st.session_state.training_program
-    with st.sidebar:
-        with st.spinner("Simulating…"):
-            sim_b = Simulation(
-                n_days=n_days,
-                providers=providers_list,
-                schedule=schedule,
-                events=events_df,
-                seed=int(seed),
-                readiness_model=st.session_state.readiness_model,
-                readiness_threshold_days=st.session_state.readiness_threshold,
-                readiness_half_life_days=st.session_state.readiness_half_life,
-                ebbinghaus_b=st.session_state.ebbinghaus_b,
-                step_t2_days=st.session_state.step_t2,
-                step_partial_value=st.session_state.step_partial,
-                training_program="none",
-            )
-            sim_b.run()
+    sim_b = Simulation(
+        n_days=n_days,
+        providers=providers_list,
+        schedule=schedule,
+        events=events_df,
+        seed=int(seed),
+        readiness_model=st.session_state.readiness_model,
+        readiness_threshold_days=st.session_state.readiness_threshold,
+        readiness_half_life_days=st.session_state.readiness_half_life,
+        ebbinghaus_b=st.session_state.ebbinghaus_b,
+        step_t2_days=st.session_state.step_t2,
+        step_partial_value=st.session_state.step_partial,
+        training_program="none",
+    )
+    sim_b.run()
 
-            if training_prog != "none":
-                sim_t = Simulation(
-                    n_days=n_days,
-                    providers=providers_list,
-                    schedule=schedule,
-                    events=events_df,
-                    seed=int(seed),
-                    readiness_model=st.session_state.readiness_model,
-                    readiness_threshold_days=st.session_state.readiness_threshold,
-                    readiness_half_life_days=st.session_state.readiness_half_life,
-                    ebbinghaus_b=st.session_state.ebbinghaus_b,
-                    step_t2_days=st.session_state.step_t2,
-                    step_partial_value=st.session_state.step_partial,
-                    training_program=training_prog,
-                    training_interval_days=st.session_state.training_interval,
-                    training_start_day=st.session_state.training_start,
-                    training_effect=st.session_state.training_effect,
-                    training_equivalence=st.session_state.training_equivalence,
-                    training_target_threshold=st.session_state.training_threshold,
-                )
-                sim_t.run()
-            else:
-                sim_t = sim_b
+    if training_prog != "none":
+        sim_t = Simulation(
+            n_days=n_days,
+            providers=providers_list,
+            schedule=schedule,
+            events=events_df,
+            seed=int(seed),
+            readiness_model=st.session_state.readiness_model,
+            readiness_threshold_days=st.session_state.readiness_threshold,
+            readiness_half_life_days=st.session_state.readiness_half_life,
+            ebbinghaus_b=st.session_state.ebbinghaus_b,
+            step_t2_days=st.session_state.step_t2,
+            step_partial_value=st.session_state.step_partial,
+            training_program=training_prog,
+            training_interval_days=st.session_state.training_interval,
+            training_start_day=st.session_state.training_start,
+            training_effect=st.session_state.training_effect,
+            training_equivalence=st.session_state.training_equivalence,
+            training_target_threshold=st.session_state.training_threshold,
+        )
+        sim_t.run()
+    else:
+        sim_t = sim_b
 
     st.session_state.sim_baseline = sim_b
     st.session_state.sim_trained = sim_t
     st.session_state.sim_ran = True
+    st.session_state._last_run_hash = f"{n_days}:{n_providers}:{int(seed)}"
 
     st.rerun()
