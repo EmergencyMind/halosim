@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import streamlit as st
+from PIL import Image
 
 from halosim.events import generate_events, load_events_from_upload
 from halosim.schedules import (
@@ -34,14 +35,37 @@ from halosim.viz import (
 # Page config
 # ---------------------------------------------------------------------------
 
+ASSETS_DIR = Path(__file__).parent / "assets"
+DATA_DIR = Path(__file__).parent / "data"
+
+_logo = Image.open(ASSETS_DIR / "logo.png")
 st.set_page_config(
     page_title="HaloSim",
-    page_icon="🔴",
+    page_icon=_logo,
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-DATA_DIR = Path(__file__).parent / "data"
+st.markdown(
+    """
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&display=swap" rel="stylesheet">
+    <style>
+      html, body, [class*="st-"], .stMarkdown, .stButton > button,
+      label, .stSelectbox, .stSlider, .stRadio {
+        font-family: 'DM Sans', sans-serif !important;
+      }
+      section[data-testid="stSidebar"] .block-container { padding-top: 1.25rem; }
+      [data-testid="stMetric"] {
+        background: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+      }
+      [data-testid="stTabs"] button { font-weight: 500; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +129,8 @@ _init_state()
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.title("🔴 HaloSim")
+    st.image(str(ASSETS_DIR / "logo.png"), width=72)
+    st.markdown("### HaloSim")
     st.caption("HALO Event Exposure & Training Simulation")
     st.divider()
 
@@ -153,6 +178,8 @@ with st.sidebar:
 
     st.divider()
     run_btn = st.button("▶ Run Simulation", type="primary", use_container_width=True)
+    st.divider()
+    st.caption("Built by [Sangfroid Labs](https://sangfroidlabs.com)")
 
 
 # ---------------------------------------------------------------------------
