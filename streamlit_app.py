@@ -393,7 +393,7 @@ with tab_schedules:
 
     if sched_source == "Built-in templates":
         selected = st.multiselect(
-            "Templates to include (providers randomly assigned one)",
+            "Schedule mix — each provider is randomly assigned one of these templates",
             list(TEMPLATES.keys()),
             default=st.session_state.schedule_templates,
         )
