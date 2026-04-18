@@ -219,13 +219,14 @@ with st.sidebar:
     )
     st.session_state.n_days = n_days
 
-    n_providers = st.slider(
-        "Population size (providers)",
+    n_providers = st.number_input(
+        "Number of providers",
         min_value=10,
         max_value=MAX_PROVIDERS,
         value=st.session_state.n_providers,
         step=10,
     )
+    n_providers = int(n_providers)
     st.session_state.n_providers = n_providers
     if n_providers > WARN_PROVIDERS:
         st.warning(f"⚠️ {n_providers:,} providers — simulation may take a few seconds.")
@@ -289,12 +290,13 @@ with tab_events:
                 max_value=1.0,
                 value=st.session_state.event_rate,
                 step=0.01,
-                help="0.14 ≈ ~50 events/year (matches cardiac arrest rate in Dworkis 2026)",
+                help="0.14 events/day ≈ 4.3/month — matches cardiac arrest rate in Dworkis 2026",
             )
             st.session_state.event_rate = rate
+            per_month = rate * 30.44
             st.caption(
-                f"Expected events over {n_days} days: **{rate * n_days:.0f}** "
-                f"(~{rate * 365:.0f}/year)"
+                f"~**{per_month:.1f} events/month** &nbsp;·&nbsp; "
+                f"{rate * n_days:.0f} expected over {n_days} days"
             )
         else:
             c1, c2 = st.columns(2)
