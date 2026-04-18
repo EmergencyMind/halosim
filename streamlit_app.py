@@ -83,7 +83,6 @@ st.markdown(
 
 def _init_state():
     defaults = {
-        "mode": "Basic",
         "n_days": 365,
         "n_providers": 200,
         "seed": 42,
@@ -148,6 +147,9 @@ def _sim_hash() -> str:
         # uploaded data: use row-count / shape as proxy
         len(s.events_df) if s.events_df is not None else -1,
         str(s.schedule_array.shape) if s.schedule_array is not None else "none",
+        # readiness
+        s.readiness_model, s.readiness_threshold, s.readiness_half_life,
+        s.ebbinghaus_b, s.step_t2, s.step_partial,
     ]
     return ":".join(str(p) for p in parts)
 
@@ -195,18 +197,6 @@ with st.sidebar:
     with _hdr_text:
         st.markdown("**HaloSim**")
         st.caption("HALO Event Exposure\n& Training Simulation")
-    st.divider()
-
-    mode = st.radio(
-        "Mode",
-        ["Basic", "Advanced"],
-        index=0 if st.session_state.mode == "Basic" else 1,
-        horizontal=True,
-        help="Basic: binary threshold, simple inputs. Advanced: full model controls.",
-    )
-    st.session_state.mode = mode
-    advanced = mode == "Advanced"
-
     st.divider()
     st.subheader("Simulation settings")
 
@@ -283,39 +273,44 @@ with tab_events:
     st.session_state.event_source = event_source
 
     if event_source == "Generate (Poisson MC)":
-        if not advanced:
-            rate = st.slider(
-                "Event rate (events / day)",
-                min_value=0.01,
-                max_value=1.0,
-                value=st.session_state.event_rate,
-                step=0.01,
-                help="0.14 events/day ≈ 4.3/month — matches cardiac arrest rate in Dworkis 2026",
-            )
-            st.session_state.event_rate = rate
-            per_month = rate * 30.44
-            st.caption(
-                f"~**{per_month:.1f} events/month** &nbsp;·&nbsp; "
-                f"{rate * n_days:.0f} expected over {n_days} days"
-            )
-        else:
+        rate = st.slider(
+            "Event rate (events / day)",
+            min_value=0.01,
+            max_value=1.0,
+            value=st.session_state.event_rate,
+            step=0.01,
+            help="0.14 events/day ≈ 4.3/month — matches cardiac arrest rate in Dworkis 2026",
+        )
+        st.session_state.event_rate = rate
+        # Keep split rates in sync with total rate (overridden in expander if set separately)
+        if st.session_state.event_day_rate + st.session_state.event_night_rate != rate:
+            st.session_state.event_day_rate = round(rate / 2, 3)
+            st.session_state.event_night_rate = round(rate / 2, 3)
+        per_month = rate * 30.44
+        st.caption(
+            f"~**{per_month:.1f} events/month** &nbsp;·&nbsp; "
+            f"{rate * n_days:.0f} expected over {n_days} days"
+        )
+
+        with st.expander("Advanced event settings"):
+            st.caption("Split rates by shift type and add seasonal variation.")
             c1, c2 = st.columns(2)
             with c1:
                 day_rate = st.slider("Day shift rate (events/day)", 0.01, 1.0,
-                                     st.session_state.event_day_rate, 0.01)
+                                     st.session_state.event_day_rate, 0.01,
+                                     key="adv_day_rate")
                 st.session_state.event_day_rate = day_rate
             with c2:
                 night_rate = st.slider("Night shift rate (events/day)", 0.01, 1.0,
-                                       st.session_state.event_night_rate, 0.01)
+                                       st.session_state.event_night_rate, 0.01,
+                                       key="adv_night_rate")
                 st.session_state.event_night_rate = night_rate
-
-            with st.expander("Seasonal variation"):
-                amp = st.slider("Amplitude (0 = flat)", 0.0, 0.9,
-                                st.session_state.seasonal_amplitude, 0.05)
-                phase = st.slider("Peak day of year", 0.0, 365.0,
-                                  st.session_state.seasonal_phase, 1.0)
-                st.session_state.seasonal_amplitude = amp
-                st.session_state.seasonal_phase = phase
+            amp = st.slider("Seasonal amplitude (0 = flat)", 0.0, 0.9,
+                            st.session_state.seasonal_amplitude, 0.05)
+            phase = st.slider("Peak day of year", 0.0, 365.0,
+                              st.session_state.seasonal_phase, 1.0)
+            st.session_state.seasonal_amplitude = amp
+            st.session_state.seasonal_phase = phase
 
         st.divider()
         with st.expander("Load sample data instead"):
@@ -331,18 +326,16 @@ with tab_events:
                 st.rerun()
 
     else:  # upload
-        allow_hour = advanced
         uploaded = st.file_uploader(
             "Upload events file",
             type=["csv", "xlsx", "xls"],
-            help="Required columns: date (YYYY-MM-DD), shift_type (day/night). "
-                 + ("Optional: hour (0–23) for complex join." if advanced else ""),
+            help="Required columns: date (YYYY-MM-DD), shift_type (day/night).",
         )
         if uploaded:
             raw = uploaded.read()
             df, errs = load_events_from_upload(
                 raw, uploaded.name, n_days,
-                allow_hour_col=allow_hour,
+                allow_hour_col=False,
             )
             st.session_state.events_errors = errs
             if df is not None:
@@ -354,7 +347,16 @@ with tab_events:
             st.success(f"✓ {len(edf)} events loaded")
             st.dataframe(edf.head(10), use_container_width=True)
 
-    if advanced:
+        with st.expander("Advanced event settings"):
+            st.caption("Enable the hour column for complex shift-boundary join.")
+            allow_hour_adv = st.checkbox("File includes 'hour' column (0–23)", value=False,
+                                         key="allow_hour_adv")
+            if allow_hour_adv and uploaded:
+                raw = uploaded.read() if hasattr(uploaded, "read") else b""
+                df2, errs2 = load_events_from_upload(raw, uploaded.name, n_days, allow_hour_col=True)
+                if df2 is not None:
+                    st.session_state.events_df = df2
+
         st.divider()
         join_opts = ["simple", "complex (requires hour column)"]
         join = st.selectbox(
@@ -379,11 +381,9 @@ with tab_schedules:
     st.header("Provider Schedule Configuration")
 
     sched_options = ["Generate schedules", "Upload CSV / Excel"]
-    if advanced:
-        sched_options.append("Custom 28-day pattern")
 
     # Migrate legacy session state value
-    if st.session_state.schedule_source == "Built-in templates":
+    if st.session_state.schedule_source in ("Built-in templates", "Custom 28-day pattern"):
         st.session_state.schedule_source = "Generate schedules"
 
     sched_source = st.radio(
@@ -419,6 +419,31 @@ with tab_schedules:
         )
         st.session_state.schedule_type = selected_type
         st.caption(_type_descriptions[selected_type])
+
+        with st.expander("Advanced schedule settings"):
+            st.caption("Define a fixed 28-character d/n/o pattern that tiles across the "
+                       "simulation window. All providers share the same template.")
+            pattern = st.text_input(
+                "28-day pattern",
+                value="dddoooodddoooodddoooodddoooo",
+                max_chars=28,
+                key="custom_pattern_input",
+            )
+            pattern = pattern.lower().strip()
+            bad_chars = [c for c in pattern if c not in "dno"]
+            if bad_chars:
+                st.error(f"Invalid characters: {set(bad_chars)}. Use only d, n, o.")
+            elif len(pattern) != 28:
+                st.warning(f"Pattern is {len(pattern)} characters — needs to be exactly 28.")
+            else:
+                d_p = pattern.count("d") / 28 * 100
+                n_p = pattern.count("n") / 28 * 100
+                o_p = pattern.count("o") / 28 * 100
+                st.caption(f"Day: {d_p:.0f}% | Night: {n_p:.0f}% | Off: {o_p:.0f}%")
+                if st.button("Use this pattern", key="use_custom_pattern"):
+                    st.session_state.schedule_type = pattern
+                    st.session_state.schedule_source = "Custom 28-day pattern"
+                    st.rerun()
 
     elif sched_source == "Upload CSV / Excel":
         uploaded_s = st.file_uploader(
@@ -461,81 +486,55 @@ with tab_schedules:
                     st.session_state.schedule_providers = providers
                     st.rerun()
 
-    elif sched_source == "Custom 28-day pattern":
-        st.caption("Enter a 28-character pattern using d (day), n (night), o (off). "
-                   "The pattern tiles across the simulation window; all providers share the same template.")
-        pattern = st.text_input(
-            "28-day pattern",
-            value="dddoooodddoooodddoooodddoooo",
-            max_chars=28,
-        )
-        pattern = pattern.lower().strip()
-        bad_chars = [c for c in pattern if c not in "dno"]
-        if bad_chars:
-            st.error(f"Invalid characters: {set(bad_chars)}. Use only d, n, o.")
-        elif len(pattern) != 28:
-            st.warning(f"Pattern is {len(pattern)} characters — needs to be exactly 28.")
-        else:
-            d_p = pattern.count("d") / 28 * 100
-            n_p = pattern.count("n") / 28 * 100
-            o_p = pattern.count("o") / 28 * 100
-            st.caption(f"Day: {d_p:.0f}% | Night: {n_p:.0f}% | Off: {o_p:.0f}%")
-            st.session_state.schedule_type = pattern
-
 
 # ── Tab 3: Exposure Analysis ───────────────────────────────────────────────
 
 with tab_exposure:
     st.header("Exposure Analysis")
 
-    if advanced:
-        st.subheader("Readiness model")
-        model_map = {
-            "Binary threshold": "binary",
-            "Exponential decay": "exponential",
-            "Ebbinghaus forgetting curve": "ebbinghaus",
-            "Two-threshold step": "step",
-        }
-        model_label = st.selectbox(
-            "Readiness model",
-            list(model_map.keys()),
-            index=list(model_map.values()).index(st.session_state.readiness_model),
-        )
-        st.session_state.readiness_model = model_map[model_label]
+    # Readiness model — always visible
+    model_map = {
+        "Binary threshold": "binary",
+        "Exponential decay": "exponential",
+        "Ebbinghaus forgetting curve": "ebbinghaus",
+        "Two-threshold step": "step",
+    }
+    model_label = st.selectbox(
+        "Readiness model",
+        list(model_map.keys()),
+        index=list(model_map.values()).index(st.session_state.readiness_model),
+        help="How provider readiness decays between exposures.",
+    )
+    st.session_state.readiness_model = model_map[model_label]
 
-        if st.session_state.readiness_model == "binary":
-            thresh = st.slider("Ready if last exposure within (days)",
-                               7, 730, st.session_state.readiness_threshold)
-            st.session_state.readiness_threshold = thresh
-        elif st.session_state.readiness_model == "exponential":
+    thresh = st.slider("Readiness threshold (days since last exposure)",
+                       7, 730, st.session_state.readiness_threshold,
+                       help="Provider is 'ready' if last exposure is within this window.")
+    st.session_state.readiness_threshold = thresh
+
+    with st.expander("Advanced readiness settings"):
+        st.caption("Model-specific parameters. Only relevant when using a non-binary model.")
+        if st.session_state.readiness_model == "exponential":
             hl = st.slider("Half-life (days)", 7, 365,
                            int(st.session_state.readiness_half_life))
             st.session_state.readiness_half_life = float(hl)
         elif st.session_state.readiness_model == "ebbinghaus":
             b = st.slider("Forgetting rate b", 0.001, 0.5,
-                          st.session_state.ebbinghaus_b, 0.001,
-                          format="%.3f")
+                          st.session_state.ebbinghaus_b, 0.001, format="%.3f")
             st.session_state.ebbinghaus_b = b
         elif st.session_state.readiness_model == "step":
-            c1, c2, c3 = st.columns(3)
+            c1, c2 = st.columns(2)
             with c1:
-                t1 = st.slider("T1 — full ready (days)", 7, 365,
-                                st.session_state.readiness_threshold)
-                st.session_state.readiness_threshold = t1
-            with c2:
-                t2 = st.slider("T2 — partial ends (days)", t1 + 1, 730,
-                                max(st.session_state.step_t2, t1 + 1))
+                t2 = st.slider("T2 — partial readiness ends (days)",
+                               thresh + 1, 730,
+                               max(st.session_state.step_t2, thresh + 1))
                 st.session_state.step_t2 = t2
-            with c3:
+            with c2:
                 pv = st.slider("Partial readiness value", 0.0, 1.0,
                                st.session_state.step_partial, 0.05)
                 st.session_state.step_partial = pv
-    else:
-        st.info(
-            f"**Binary threshold model** — providers are considered 'ready' if they "
-            f"have had a live HALO exposure within the last **{st.session_state.readiness_threshold} days**. "
-            "Switch to Advanced mode to change the readiness model."
-        )
+        else:
+            st.caption("No additional parameters for the binary threshold model.")
 
     st.divider()
 
@@ -666,9 +665,6 @@ with tab_training:
         "Bi-monthly (every 56 days)": "bimonthly",
         "Quarterly (every 84 days)": "quarterly",
     }
-    if advanced:
-        program_map["Custom interval"] = "custom"
-        program_map["Targeted (train undertrained providers only)"] = "targeted"
 
     prog_label = st.selectbox(
         "Training program",
@@ -677,37 +673,60 @@ with tab_training:
     )
     st.session_state.training_program = program_map[prog_label]
 
-    if advanced and st.session_state.training_program == "custom":
-        c1, c2 = st.columns(2)
-        with c1:
-            ti = st.slider("Training interval (days)", 7, 365,
-                           st.session_state.training_interval)
-            st.session_state.training_interval = ti
-        with c2:
-            ts = st.slider("First training day", 0, 90,
-                           st.session_state.training_start)
-            st.session_state.training_start = ts
+    with st.expander("Advanced training settings"):
+        st.caption("Custom schedules, targeted delivery, partial training effectiveness, "
+                   "and chart smoothing.")
 
-    if advanced and st.session_state.training_program == "targeted":
-        targ_thresh = st.slider(
-            "Train providers whose readiness is below (%)",
-            10, 100, int(st.session_state.training_threshold * 100), 5
+        adv_prog_map = {
+            "Custom interval": "custom",
+            "Targeted (train undertrained providers only)": "targeted",
+        }
+        adv_prog_label = st.selectbox(
+            "Override with advanced program",
+            ["— use selection above —"] + list(adv_prog_map.keys()),
+            key="adv_prog_select",
         )
-        st.session_state.training_threshold = targ_thresh / 100.0
-        ti2 = st.slider("Minimum days between training sessions", 7, 180,
-                        st.session_state.training_interval)
-        st.session_state.training_interval = ti2
+        if adv_prog_label != "— use selection above —":
+            st.session_state.training_program = adv_prog_map[adv_prog_label]
 
-    if advanced and st.session_state.training_program != "none":
-        st.subheader("Training effect")
-        effect_opts = ["Full reset (training = live exposure)", "Partial boost"]
-        eff = st.radio("Training effectiveness", effect_opts, horizontal=True,
-                       index=0 if st.session_state.training_effect == "full" else 1)
-        st.session_state.training_effect = "full" if eff == effect_opts[0] else "partial"
-        if st.session_state.training_effect == "partial":
-            eq = st.slider("Equivalence factor (1.0 = same as live exposure)",
-                           0.1, 1.0, st.session_state.training_equivalence, 0.05)
-            st.session_state.training_equivalence = eq
+        if st.session_state.training_program == "custom":
+            c1, c2 = st.columns(2)
+            with c1:
+                ti = st.slider("Training interval (days)", 7, 365,
+                               st.session_state.training_interval, key="adv_ti")
+                st.session_state.training_interval = ti
+            with c2:
+                ts = st.slider("First training day", 0, 90,
+                               st.session_state.training_start, key="adv_ts")
+                st.session_state.training_start = ts
+
+        if st.session_state.training_program == "targeted":
+            targ_thresh = st.slider(
+                "Train providers whose readiness is below (%)",
+                10, 100, int(st.session_state.training_threshold * 100), 5,
+                key="adv_targ",
+            )
+            st.session_state.training_threshold = targ_thresh / 100.0
+            ti2 = st.slider("Minimum days between training sessions", 7, 180,
+                            st.session_state.training_interval, key="adv_ti2")
+            st.session_state.training_interval = ti2
+
+        if st.session_state.training_program != "none":
+            st.divider()
+            effect_opts = ["Full reset (training = live exposure)", "Partial boost"]
+            eff = st.radio("Training effectiveness", effect_opts, horizontal=True,
+                           index=0 if st.session_state.training_effect == "full" else 1,
+                           key="adv_effect")
+            st.session_state.training_effect = "full" if eff == effect_opts[0] else "partial"
+            if st.session_state.training_effect == "partial":
+                eq = st.slider("Equivalence factor (1.0 = same as live exposure)",
+                               0.1, 1.0, st.session_state.training_equivalence, 0.05,
+                               key="adv_eq")
+                st.session_state.training_equivalence = eq
+
+        st.divider()
+        roll = st.slider("Rolling mean window (days)", 1, 90, 30, key="roll_window")
+        st.session_state["_roll_window"] = roll
 
     st.divider()
 
@@ -735,10 +754,7 @@ with tab_training:
 
             st.divider()
 
-            roll = 30
-            if advanced:
-                roll = st.slider("Rolling mean window (days)", 1, 90, 30,
-                                 key="roll_window")
+            roll = st.session_state.get("_roll_window", 30)
 
             fig = plot_readiness_timeseries(
                 sim_b.proportion_ready_on_shift,
@@ -802,17 +818,16 @@ with tab_training:
                         use_container_width=True,
                     )
 
-            if advanced:
-                with st.expander("Also show: all providers (including off-shift)"):
-                    fig2 = plot_readiness_timeseries(
-                        sim_b.proportion_ready_all,
-                        sim_t.proportion_ready_all if sim_t else sim_b.proportion_ready_all,
-                        n_days=sim_b.n_days,
-                        rolling_days=roll,
-                    )
-                    st.caption("⚠️ This includes providers currently off-shift. "
-                               "The on-shift metric above is the primary indicator.")
-                    st.plotly_chart(fig2, use_container_width=True)
+            with st.expander("Also show: all providers (including off-shift)"):
+                fig2 = plot_readiness_timeseries(
+                    sim_b.proportion_ready_all,
+                    sim_t.proportion_ready_all if sim_t else sim_b.proportion_ready_all,
+                    n_days=sim_b.n_days,
+                    rolling_days=roll,
+                )
+                st.caption("⚠️ This includes providers currently off-shift. "
+                           "The on-shift metric above is the primary indicator.")
+                st.plotly_chart(fig2, use_container_width=True)
 
 
 # ---------------------------------------------------------------------------
@@ -824,14 +839,18 @@ if run_btn:
 
     # 1. Build events
     if st.session_state.event_source == "Generate (Poisson MC)":
-        if advanced:
+        _day_r = st.session_state.event_day_rate
+        _ngt_r = st.session_state.event_night_rate
+        _amp   = st.session_state.seasonal_amplitude
+        # Use split rates if they differ from the simple half/half default
+        if (_day_r != _ngt_r or _amp > 0):
             events_df, e_warn = generate_events(
                 n_days=n_days,
-                rate=st.session_state.event_day_rate + st.session_state.event_night_rate,
+                rate=_day_r + _ngt_r,
                 seed=int(seed),
-                day_rate=st.session_state.event_day_rate,
-                night_rate=st.session_state.event_night_rate,
-                seasonal_amplitude=st.session_state.seasonal_amplitude,
+                day_rate=_day_r,
+                night_rate=_ngt_r,
+                seasonal_amplitude=_amp,
                 seasonal_phase_days=st.session_state.seasonal_phase,
             )
         else:
