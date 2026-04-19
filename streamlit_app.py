@@ -89,8 +89,7 @@ def _init_state():
         # events
         "event_source": "Generate (Poisson MC)",
         "event_rate": 0.14,
-        "event_day_rate": 0.07,
-        "event_night_rate": 0.07,
+        "event_day_pct": 50,
         "seasonal_amplitude": 0.0,
         "seasonal_phase": 0.0,
         "events_df": None,
@@ -139,7 +138,7 @@ def _sim_hash() -> str:
     parts = [
         s.n_days, s.n_providers, s.seed,
         # events
-        s.event_source, s.event_rate, s.event_day_rate, s.event_night_rate,
+        s.event_source, s.event_rate, s.get("event_day_pct", 50),
         s.seasonal_amplitude, s.seasonal_phase,
         # schedules
         s.schedule_source,
@@ -282,10 +281,6 @@ with tab_events:
             help="0.14 events/day ≈ 4.3/month — matches cardiac arrest rate in Dworkis 2026",
         )
         st.session_state.event_rate = rate
-        # Keep split rates in sync with total rate (overridden in expander if set separately)
-        if st.session_state.event_day_rate + st.session_state.event_night_rate != rate:
-            st.session_state.event_day_rate = round(rate / 2, 3)
-            st.session_state.event_night_rate = round(rate / 2, 3)
         per_month = rate * 30.44
         st.caption(
             f"~**{per_month:.1f} events/month** &nbsp;·&nbsp; "
@@ -293,18 +288,18 @@ with tab_events:
         )
 
         with st.expander("Advanced event settings"):
-            st.caption("Split rates by shift type and add seasonal variation.")
-            c1, c2 = st.columns(2)
-            with c1:
-                day_rate = st.slider("Day shift rate (events/day)", 0.01, 1.0,
-                                     st.session_state.event_day_rate, 0.01,
-                                     key="adv_day_rate")
-                st.session_state.event_day_rate = day_rate
-            with c2:
-                night_rate = st.slider("Night shift rate (events/day)", 0.01, 1.0,
-                                       st.session_state.event_night_rate, 0.01,
-                                       key="adv_night_rate")
-                st.session_state.event_night_rate = night_rate
+            day_pct = st.slider(
+                "% occurring on day shifts",
+                min_value=0, max_value=100,
+                value=st.session_state.get("event_day_pct", 50),
+                step=5,
+                help="Remaining % occurs on night shifts. Default 50/50.",
+            )
+            st.session_state.event_day_pct = day_pct
+            st.caption(
+                f"Day rate: {rate * day_pct / 100:.3f}/day &nbsp;·&nbsp; "
+                f"Night rate: {rate * (100 - day_pct) / 100:.3f}/day"
+            )
             amp = st.slider("Seasonal amplitude (0 = flat)", 0.0, 0.9,
                             st.session_state.seasonal_amplitude, 0.05)
             phase = st.slider("Peak day of year", 0.0, 365.0,
@@ -839,14 +834,15 @@ if run_btn:
 
     # 1. Build events
     if st.session_state.event_source == "Generate (Poisson MC)":
-        _day_r = st.session_state.event_day_rate
-        _ngt_r = st.session_state.event_night_rate
+        _rate  = st.session_state.event_rate
+        _d_pct = st.session_state.get("event_day_pct", 50) / 100
         _amp   = st.session_state.seasonal_amplitude
-        # Use split rates if they differ from the simple half/half default
-        if (_day_r != _ngt_r or _amp > 0):
+        _day_r = round(_rate * _d_pct, 4)
+        _ngt_r = round(_rate * (1 - _d_pct), 4)
+        if (_d_pct != 0.5 or _amp > 0):
             events_df, e_warn = generate_events(
                 n_days=n_days,
-                rate=_day_r + _ngt_r,
+                rate=_rate,
                 seed=int(seed),
                 day_rate=_day_r,
                 night_rate=_ngt_r,
@@ -856,7 +852,7 @@ if run_btn:
         else:
             events_df, e_warn = generate_events(
                 n_days=n_days,
-                rate=st.session_state.event_rate,
+                rate=_rate,
                 seed=int(seed),
             )
         if e_warn:
