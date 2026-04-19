@@ -30,18 +30,16 @@ _GREY = "#94A3B8"
 
 def plot_gap_distribution(results_df: pd.DataFrame) -> go.Figure:
     """
-    Violin + box plots for gap_min, gap_median, gap_mean, gap_max across providers.
-    Mirrors Figure 2 from Dworkis 2026.
+    Violin + box plots for gap_min, gap_median, gap_max across providers.
     """
     metrics = {
-        "gap_min": "Minimum gap",
+        "gap_min":    "Minimum gap",
         "gap_median": "Median gap",
-        "gap_mean": "Mean gap",
-        "gap_max": "Maximum gap",
+        "gap_max":    "Maximum gap",
     }
 
     fig = make_subplots(
-        rows=1, cols=4,
+        rows=1, cols=3,
         subplot_titles=list(metrics.values()),
         shared_yaxes=True,
     )
