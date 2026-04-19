@@ -491,41 +491,6 @@ with tab_exposure:
     st.session_state.readiness_threshold = thresh
     st.session_state.readiness_model = "binary"
 
-    with st.expander("Advanced readiness settings"):
-        st.caption("Alternative models for how readiness decays between exposures.")
-        model_map = {
-            "Binary threshold": "binary",
-            "Exponential decay": "exponential",
-            "Ebbinghaus forgetting curve": "ebbinghaus",
-            "Two-threshold step": "step",
-        }
-        model_label = st.selectbox(
-            "Readiness model",
-            list(model_map.keys()),
-            index=list(model_map.values()).index(st.session_state.readiness_model),
-        )
-        st.session_state.readiness_model = model_map[model_label]
-
-        if st.session_state.readiness_model == "exponential":
-            hl = st.slider("Half-life (days)", 7, 365,
-                           int(st.session_state.readiness_half_life))
-            st.session_state.readiness_half_life = float(hl)
-        elif st.session_state.readiness_model == "ebbinghaus":
-            b = st.slider("Forgetting rate b", 0.001, 0.5,
-                          st.session_state.ebbinghaus_b, 0.001, format="%.3f")
-            st.session_state.ebbinghaus_b = b
-        elif st.session_state.readiness_model == "step":
-            c1, c2 = st.columns(2)
-            with c1:
-                t2 = st.slider("T2 — partial readiness ends (days)",
-                               thresh + 1, 730,
-                               max(st.session_state.step_t2, thresh + 1))
-                st.session_state.step_t2 = t2
-            with c2:
-                pv = st.slider("Partial readiness value", 0.0, 1.0,
-                               st.session_state.step_partial, 0.05)
-                st.session_state.step_partial = pv
-
     st.divider()
 
     if not st.session_state.sim_ran:
