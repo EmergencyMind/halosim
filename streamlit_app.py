@@ -98,6 +98,8 @@ def _init_state():
         # schedules
         "schedule_source": "Generate schedules",
         "schedule_type": DEFAULT_SCHEDULE_TYPE,
+        "schedule_day_pct": None,
+        "schedule_night_pct": None,
         "schedule_array": None,
         "schedule_providers": None,
         "schedule_warnings": [],
@@ -143,6 +145,7 @@ def _sim_hash() -> str:
         # schedules
         s.schedule_source,
         s.get("schedule_type", DEFAULT_SCHEDULE_TYPE),
+        s.get("schedule_day_pct"), s.get("schedule_night_pct"),
         # uploaded data: use row-count / shape as proxy
         len(s.events_df) if s.events_df is not None else -1,
         str(s.schedule_array.shape) if s.schedule_array is not None else "none",
@@ -416,29 +419,29 @@ with tab_schedules:
         st.caption(_type_descriptions[selected_type])
 
         with st.expander("Advanced schedule settings"):
-            st.caption("Define a fixed 28-character d/n/o pattern that tiles across the "
-                       "simulation window. All providers share the same template.")
-            pattern = st.text_input(
-                "28-day pattern",
-                value="dddoooodddoooodddoooodddoooo",
-                max_chars=28,
-                key="custom_pattern_input",
+            st.caption(
+                "Override with a custom shift distribution. Each provider gets a "
+                "randomly generated schedule drawn from these percentages."
             )
-            pattern = pattern.lower().strip()
-            bad_chars = [c for c in pattern if c not in "dno"]
-            if bad_chars:
-                st.error(f"Invalid characters: {set(bad_chars)}. Use only d, n, o.")
-            elif len(pattern) != 28:
-                st.warning(f"Pattern is {len(pattern)} characters — needs to be exactly 28.")
+            _d_default = st.session_state.get("schedule_day_pct") or 25
+            _n_default = st.session_state.get("schedule_night_pct") or 23
+            _d_pct = st.slider("% day shifts", 0, 100, _d_default, 5, key="sched_day_pct")
+            _n_max = 100 - _d_pct
+            _n_pct = st.slider("% night shifts", 0, _n_max,
+                               min(_n_default, _n_max), 5, key="sched_night_pct")
+            _o_pct = 100 - _d_pct - _n_pct
+            st.caption(f"Day: {_d_pct}% &nbsp;·&nbsp; Night: {_n_pct}% &nbsp;·&nbsp; Off: {_o_pct}%")
+            _use_custom = st.checkbox(
+                "Use these percentages (overrides schedule type above)",
+                value=(st.session_state.get("schedule_day_pct") is not None),
+                key="use_custom_sched_weights",
+            )
+            if _use_custom:
+                st.session_state.schedule_day_pct = _d_pct
+                st.session_state.schedule_night_pct = _n_pct
             else:
-                d_p = pattern.count("d") / 28 * 100
-                n_p = pattern.count("n") / 28 * 100
-                o_p = pattern.count("o") / 28 * 100
-                st.caption(f"Day: {d_p:.0f}% | Night: {n_p:.0f}% | Off: {o_p:.0f}%")
-                if st.button("Use this pattern", key="use_custom_pattern"):
-                    st.session_state.schedule_type = pattern
-                    st.session_state.schedule_source = "Custom 28-day pattern"
-                    st.rerun()
+                st.session_state.schedule_day_pct = None
+                st.session_state.schedule_night_pct = None
 
     elif sched_source == "Upload CSV / Excel":
         uploaded_s = st.file_uploader(
@@ -879,21 +882,20 @@ if run_btn:
             )
         providers_list = (st.session_state.schedule_providers or [])[:n_providers] \
             or [f"P{i+1:04d}" for i in range(n_providers)]
-    elif sched_source == "Custom 28-day pattern":
-        pattern = st.session_state.get("schedule_type", "dddoooodddoooodddoooodddoooo")
-        schedule, s_warn = generate_from_pattern(
-            n_providers=n_providers,
-            n_days=n_days,
-            pattern=pattern,
-            seed=int(seed),
-        )
-        providers_list = [f"P{i+1:04d}" for i in range(n_providers)]
     else:
+        _d = st.session_state.get("schedule_day_pct")
+        _n = st.session_state.get("schedule_night_pct")
+        _weights = (
+            {"d": _d / 100, "n": _n / 100, "o": (100 - _d - _n) / 100}
+            if _d is not None and _n is not None
+            else None
+        )
         schedule, s_warn = generate_schedule(
             n_providers=n_providers,
             n_days=n_days,
             schedule_type=st.session_state.get("schedule_type", DEFAULT_SCHEDULE_TYPE),
             seed=int(seed),
+            weights=_weights,
         )
         providers_list = [f"P{i+1:04d}" for i in range(n_providers)]
 

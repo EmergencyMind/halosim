@@ -53,8 +53,23 @@ _NORM = {"d": "d", "day": "d", "n": "n", "night": "n", "o": "o", "off": "o"}
 # Single-provider schedule generator
 # ---------------------------------------------------------------------------
 
-def _generate_one(rng: np.random.Generator, n_days: int, schedule_type: str) -> np.ndarray:
-    """Generate a single provider's schedule array of length n_days."""
+def _generate_one(
+    rng: np.random.Generator,
+    n_days: int,
+    schedule_type: str,
+    weights: dict[str, float] | None = None,
+) -> np.ndarray:
+    """Generate a single provider's schedule array of length n_days.
+
+    If `weights` is provided (keys d/n/o, values summing to 1), each day is
+    drawn independently from those weights regardless of schedule_type.
+    """
+    if weights is not None:
+        choices = ["d", "n", "o"]
+        probs = np.array([weights.get(c, 0.0) for c in choices], dtype=float)
+        probs /= probs.sum()
+        return rng.choice(choices, size=n_days, p=probs)
+
     sched = np.full(n_days, "o", dtype="U1")
 
     if schedule_type in ("3/7 Day", "3/7 Night", "4/7 Day", "4/7 Night"):
@@ -100,13 +115,16 @@ def generate_schedule(
     n_days: int,
     schedule_type: str = DEFAULT_SCHEDULE_TYPE,
     seed: int = 42,
+    weights: dict[str, float] | None = None,
 ) -> tuple[np.ndarray, list[str]]:
     """
     Generate a (n_providers, n_days) schedule matrix.
 
     Each provider receives an independently randomised schedule that satisfies
-    the constraints of schedule_type.  Seeding is applied at the population
-    level so results are fully reproducible given the same inputs.
+    the constraints of schedule_type.  If `weights` is provided (dict with keys
+    'd', 'n', 'o' summing to 1), each provider-day is drawn from those weights
+    independently (overrides schedule_type).  Seeding is applied at the
+    population level so results are fully reproducible given the same inputs.
 
     Returns (schedule_array, warnings).
     """
@@ -126,7 +144,7 @@ def generate_schedule(
     rng = np.random.default_rng(seed)
     schedule = np.empty((n_providers, n_days), dtype="U1")
     for i in range(n_providers):
-        schedule[i] = _generate_one(rng, n_days, schedule_type)
+        schedule[i] = _generate_one(rng, n_days, schedule_type, weights=weights)
 
     return schedule, warnings
 
