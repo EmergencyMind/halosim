@@ -507,14 +507,13 @@ with tab_exposure:
             thresh = sim.readiness_threshold_days
 
             # Summary metrics
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Providers simulated", f"{n:,}")
-            c2.metric("Median exposures / provider",
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Median exposures / provider",
                       f"{rdf['n_events'].median():.1f}")
+            c2.metric("Median days between exposures",
+                      f"{rdf['gap_median'].dropna().median():.0f}")
             c3.metric(f"% with max gap > {thresh}d",
                       f"{100 * n_exceed / n:.1f}%")
-            c4.metric("% with zero exposures",
-                      f"{100 * n_zero / n:.1f}%")
 
             # Percentile table
             st.divider()
