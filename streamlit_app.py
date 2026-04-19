@@ -831,18 +831,15 @@ if run_btn:
     if st.session_state.event_source == "Generate (Poisson MC)":
         _rate  = st.session_state.event_rate
         _d_pct = st.session_state.get("event_day_pct", 50) / 100
-        _amp   = st.session_state.seasonal_amplitude
         _day_r = round(_rate * _d_pct, 4)
         _ngt_r = round(_rate * (1 - _d_pct), 4)
-        if (_d_pct != 0.5 or _amp > 0):
+        if _d_pct != 0.5:
             events_df, e_warn = generate_events(
                 n_days=n_days,
                 rate=_rate,
                 seed=int(seed),
                 day_rate=_day_r,
                 night_rate=_ngt_r,
-                seasonal_amplitude=_amp,
-                seasonal_phase_days=st.session_state.seasonal_phase,
             )
         else:
             events_df, e_warn = generate_events(
