@@ -227,7 +227,7 @@ def generate_pdf(
     pct_90 = 100 * (rdf["gap_max"].fillna(9999) > 90).mean()
     if pct_90 >= 80:
         interp = (f"{pct_90:.0f}% of providers exceed the 90-day gap benchmark  -  consistent with "
-                  "the paper's community hospital finding of 98% (Dworkis 2026). Consider whether "
+                  "the paper's community hospital finding of 98% (PMID: 41633464). Consider whether "
                   "your training frequency is sufficient to compensate for infrequent live exposure.")
     elif pct_90 >= 40:
         interp = (f"{pct_90:.0f}% of providers exceed the 90-day gap benchmark. "

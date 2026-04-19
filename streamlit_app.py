@@ -90,8 +90,6 @@ def _init_state():
         "event_source": "Generate (Poisson MC)",
         "event_rate": 0.14,
         "event_day_pct": 50,
-        "seasonal_amplitude": 0.0,
-        "seasonal_phase": 0.0,
         "events_df": None,
         "events_warnings": [],
         "events_errors": [],
@@ -141,7 +139,6 @@ def _sim_hash() -> str:
         s.n_days, s.n_providers, s.seed,
         # events
         s.event_source, s.event_rate, s.get("event_day_pct", 50),
-        s.seasonal_amplitude, s.seasonal_phase,
         # schedules
         s.schedule_source,
         s.get("schedule_type", DEFAULT_SCHEDULE_TYPE),
@@ -275,18 +272,18 @@ with tab_events:
     st.session_state.event_source = event_source
 
     if event_source == "Generate (Poisson MC)":
-        rate = st.slider(
-            "Event rate (events / day)",
-            min_value=0.01,
-            max_value=1.0,
-            value=st.session_state.event_rate,
-            step=0.01,
-            help="0.14 events/day ≈ 4.3/month — matches cardiac arrest rate in Dworkis 2026",
+        rate_per_year = st.slider(
+            "Event rate (events / year)",
+            min_value=1,
+            max_value=365,
+            value=round(st.session_state.event_rate * 365),
+            step=1,
+            help="Number of HALO events per year across the unit. ~51/year matches cardiac arrest rate in PMID: 41633464",
         )
+        rate = rate_per_year / 365.0
         st.session_state.event_rate = rate
-        per_month = rate * 30.44
         st.caption(
-            f"~**{per_month:.1f} events/month** &nbsp;·&nbsp; "
+            f"~**{rate * 30.44:.1f} events/month** &nbsp;·&nbsp; "
             f"{rate * n_days:.0f} expected over {n_days} days"
         )
 
@@ -303,12 +300,6 @@ with tab_events:
                 f"Day rate: {rate * day_pct / 100:.3f}/day &nbsp;·&nbsp; "
                 f"Night rate: {rate * (100 - day_pct) / 100:.3f}/day"
             )
-            amp = st.slider("Seasonal amplitude (0 = flat)", 0.0, 0.9,
-                            st.session_state.seasonal_amplitude, 0.05)
-            phase = st.slider("Peak day of year", 0.0, 365.0,
-                              st.session_state.seasonal_phase, 1.0)
-            st.session_state.seasonal_amplitude = amp
-            st.session_state.seasonal_phase = phase
 
         st.divider()
         with st.expander("Load sample data instead"):
@@ -404,7 +395,7 @@ with tab_schedules:
             "4/7 Night": "4 randomly placed night shifts per 7-day week, rest off",
             "Progressive (day & night mix)":
                 "3-4 shifts per week, each randomly assigned day or night",
-            "Random":    "Each day drawn from empirical d/n/o weights (Dworkis 2026: 25% day, 23% night, 52% off)",
+            "Random":    "Each day drawn from empirical d/n/o weights (PMID: 41633464: 25% day, 23% night, 52% off)",
         }
         current_type = st.session_state.get("schedule_type", DEFAULT_SCHEDULE_TYPE)
         if current_type not in SCHEDULE_TYPES:
@@ -427,8 +418,12 @@ with tab_schedules:
             _n_default = st.session_state.get("schedule_night_pct") or 23
             _d_pct = st.slider("% day shifts", 0, 100, _d_default, 5, key="sched_day_pct")
             _n_max = 100 - _d_pct
-            _n_pct = st.slider("% night shifts", 0, _n_max,
-                               min(_n_default, _n_max), 5, key="sched_night_pct")
+            if _n_max > 0:
+                _n_pct = st.slider("% night shifts", 0, _n_max,
+                                   min(_n_default, _n_max), 5, key="sched_night_pct")
+            else:
+                _n_pct = 0
+                st.caption("Night: 0% (day shifts at 100%)")
             _o_pct = 100 - _d_pct - _n_pct
             st.caption(f"Day: {_d_pct}% &nbsp;·&nbsp; Night: {_n_pct}% &nbsp;·&nbsp; Off: {_o_pct}%")
             _use_custom = st.checkbox(
@@ -490,28 +485,27 @@ with tab_schedules:
 with tab_exposure:
     st.header("Exposure Analysis")
 
-    # Readiness model — always visible
-    model_map = {
-        "Binary threshold": "binary",
-        "Exponential decay": "exponential",
-        "Ebbinghaus forgetting curve": "ebbinghaus",
-        "Two-threshold step": "step",
-    }
-    model_label = st.selectbox(
-        "Readiness model",
-        list(model_map.keys()),
-        index=list(model_map.values()).index(st.session_state.readiness_model),
-        help="How provider readiness decays between exposures.",
-    )
-    st.session_state.readiness_model = model_map[model_label]
-
     thresh = st.slider("Readiness threshold (days since last exposure)",
                        7, 730, st.session_state.readiness_threshold,
-                       help="Provider is 'ready' if last exposure is within this window.")
+                       help="Provider is 'ready' if they have had a live exposure within this window.")
     st.session_state.readiness_threshold = thresh
+    st.session_state.readiness_model = "binary"
 
     with st.expander("Advanced readiness settings"):
-        st.caption("Model-specific parameters. Only relevant when using a non-binary model.")
+        st.caption("Alternative models for how readiness decays between exposures.")
+        model_map = {
+            "Binary threshold": "binary",
+            "Exponential decay": "exponential",
+            "Ebbinghaus forgetting curve": "ebbinghaus",
+            "Two-threshold step": "step",
+        }
+        model_label = st.selectbox(
+            "Readiness model",
+            list(model_map.keys()),
+            index=list(model_map.values()).index(st.session_state.readiness_model),
+        )
+        st.session_state.readiness_model = model_map[model_label]
+
         if st.session_state.readiness_model == "exponential":
             hl = st.slider("Half-life (days)", 7, 365,
                            int(st.session_state.readiness_half_life))
@@ -531,8 +525,6 @@ with tab_exposure:
                 pv = st.slider("Partial readiness value", 0.0, 1.0,
                                st.session_state.step_partial, 0.05)
                 st.session_state.step_partial = pv
-        else:
-            st.caption("No additional parameters for the binary threshold model.")
 
     st.divider()
 
@@ -584,7 +576,7 @@ with tab_exposure:
             if _pct_90 >= 80:
                 _interp = (f"**{_pct_90:.0f}%** of providers exceed the 90-day gap benchmark — "
                            "consistent with the paper's community hospital finding of 98% "
-                           "(Dworkis 2026). Training may be needed to compensate for "
+                           "(PMID: 41633464). Training may be needed to compensate for "
                            "infrequent live exposure.")
             elif _pct_90 >= 40:
                 _interp = (f"**{_pct_90:.0f}%** of providers exceed the 90-day gap benchmark. "

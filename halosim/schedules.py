@@ -12,7 +12,7 @@ Schedule types
 4/7 Day          4 randomly placed day shifts per 7-day week, rest off
 4/7 Night        4 randomly placed night shifts per 7-day week, rest off
 Progressive      3–4 shifts per week, each independently day or night
-Random           Each day drawn from empirical d/n/o weights (Dworkis 2026)
+Random           Each day drawn from empirical d/n/o weights (PMID: 41633464)
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ SCHEDULE_TYPES: list[str] = [
 
 DEFAULT_SCHEDULE_TYPE = "3/7 Day"
 
-# Empirical d/n/o weights from the paper (Dworkis 2026)
+# Empirical d/n/o weights from the paper (PMID: 41633464)
 _DEFAULT_WEIGHTS = {"d": 0.246, "n": 0.230, "o": 0.524}
 
 MAX_PROVIDERS = 5_000
