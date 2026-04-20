@@ -229,6 +229,24 @@ with st.sidebar:
     )
     st.session_state.seed = int(seed)
 
+    thresh_sidebar = st.number_input(
+        "Critical threshold (days)",
+        min_value=1,
+        value=st.session_state.readiness_threshold,
+        step=1,
+        help="Maximum acceptable gap between HALO event exposures. "
+             "Providers exceeding this are considered under-exposed.",
+    )
+    thresh_sidebar = int(thresh_sidebar)
+    if thresh_sidebar > n_days:
+        st.error(
+            f"Threshold ({thresh_sidebar} d) exceeds the simulation window ({n_days} d)."
+        )
+        thresh_sidebar = st.session_state.readiness_threshold
+    else:
+        st.session_state.readiness_threshold = thresh_sidebar
+    st.session_state.readiness_model = "binary"
+
     st.divider()
     run_btn = st.button("▶ Run Simulation", type="primary", use_container_width=True)
     st.divider()
@@ -271,8 +289,9 @@ with tab_start:
     st.subheader("How to run a simulation")
 
     steps = [
-        ("🔧 Sidebar", "Set your **simulation window** (e.g. 365 days), **number of providers**, and "
-         "**random seed**. These apply to all tabs."),
+        ("🔧 Sidebar", "Set your **simulation window** (e.g. 365 days), **number of providers**, "
+         "**random seed**, and **critical threshold** (the maximum acceptable gap in days between "
+         "exposures — default 90). These apply to all tabs."),
         ("🔥 Events tab", "Choose **Generate** to draw events from a Poisson model (set events/year), "
          "or **Upload** a CSV with columns `date` and `shift_type` (day/night). "
          "The event rate drives how often providers are exposed on shift."),
@@ -542,25 +561,6 @@ with tab_schedules:
 
 with tab_exposure:
     st.header("Exposure Analysis")
-
-    thresh = st.number_input(
-        "Critical threshold (days between HALO events)",
-        min_value=1,
-        value=st.session_state.readiness_threshold,
-        step=1,
-    )
-    thresh = int(thresh)
-    if thresh > n_days:
-        st.error(
-            f"Threshold ({thresh} days) exceeds the simulation window ({n_days} days) — "
-            f"try a value under {n_days} days."
-        )
-        thresh = st.session_state.readiness_threshold
-    else:
-        st.session_state.readiness_threshold = thresh
-    st.session_state.readiness_model = "binary"
-
-    st.divider()
 
     if not st.session_state.sim_ran:
         st.info("Configure Events and Schedules above, then click **▶ Run Simulation** in the sidebar.")
