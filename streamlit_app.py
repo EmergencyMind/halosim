@@ -684,27 +684,27 @@ with tab_exposure:
 
                 _ev2 = _ev.copy()
                 _ev2["month"] = (_ev2["day_idx"] // 30).clip(upper=max(0, sim.n_days // 30 - 1))
-                _monthly = _ev2.groupby("month").size().reset_index(name="count")
-                _monthly["label"] = _monthly["month"].apply(lambda m: f"Mo {m+1}")
+                _monthly_day = _ev2[_ev2["shift_type"] == "day"].groupby("month").size().reset_index(name="count")
+                _monthly_ngt = _ev2[_ev2["shift_type"] == "night"].groupby("month").size().reset_index(name="count")
+                _all_months = list(range(sim.n_days // 30))
+                _labels = [f"Mo {m+1}" for m in _all_months]
+                _day_counts = [int(_monthly_day.set_index("month")["count"].get(m, 0)) for m in _all_months]
+                _ngt_counts = [int(_monthly_ngt.set_index("month")["count"].get(m, 0)) for m in _all_months]
                 import plotly.graph_objects as _go
-                _fig_ev = _go.Figure(_go.Bar(
-                    x=_monthly["label"], y=_monthly["count"],
-                    marker_color="#2563EB", opacity=0.8,
-                ))
+                _fig_ev = _go.Figure([
+                    _go.Bar(x=_labels, y=_day_counts, name="Day", marker_color="#2563EB", opacity=0.85),
+                    _go.Bar(x=_labels, y=_ngt_counts, name="Night", marker_color="#7C3AED", opacity=0.85),
+                ])
                 _fig_ev.update_layout(
                     title="Events per month",
-                    height=240, margin=dict(t=40, b=20, l=30, r=10),
+                    barmode="stack",
+                    height=260, margin=dict(t=40, b=20, l=30, r=10),
                     plot_bgcolor="white", paper_bgcolor="white",
+                    legend=dict(orientation="h", x=0.01, y=1.12),
                 )
                 _fig_ev.update_xaxes(gridcolor="#E2E8F0")
                 _fig_ev.update_yaxes(gridcolor="#E2E8F0", title="Events")
                 st.plotly_chart(_fig_ev, use_container_width=True)
-
-                _ev_show = _ev[["day_idx", "shift_type"]].copy()
-                if "date" in _ev.columns:
-                    _ev_show.insert(0, "date", _ev["date"])
-                st.caption("First 15 events:")
-                st.dataframe(_ev_show.head(15), use_container_width=True, hide_index=True)
 
             with st.expander("View simulated schedules"):
                 _sched = sim.schedule
