@@ -412,6 +412,46 @@ with tab_events:
                     st.warning("Complex join requires an 'hour' column in the events file. "
                                "Falling back to simple join.")
 
+    # ── Events detail (post-run) ──
+    if st.session_state.sim_ran and st.session_state.sim_baseline is not None:
+        st.divider()
+        with st.expander("View simulated events detail"):
+            _ev = st.session_state.sim_baseline.events
+            _n_ev = len(_ev)
+            _n_day_ev = int((_ev["shift_type"] == "day").sum())
+            _n_night_ev = int((_ev["shift_type"] == "night").sum())
+            ec1, ec2, ec3 = st.columns(3)
+            ec1.metric("Total events", _n_ev)
+            ec2.metric("Day shift", f"{_n_day_ev}  ({100*_n_day_ev//_n_ev if _n_ev else 0}%)")
+            ec3.metric("Night shift", f"{_n_night_ev}  ({100*_n_night_ev//_n_ev if _n_ev else 0}%)")
+
+            # Monthly distribution bar chart
+            _sim_nd = st.session_state.sim_baseline.n_days
+            _ev2 = _ev.copy()
+            _ev2["month"] = (_ev2["day_idx"] // 30).clip(upper=max(0, _sim_nd // 30 - 1))
+            _monthly = _ev2.groupby("month").size().reset_index(name="count")
+            _monthly["label"] = _monthly["month"].apply(lambda m: f"Mo {m+1}")
+            import plotly.graph_objects as _go
+            _fig_ev = _go.Figure(_go.Bar(
+                x=_monthly["label"], y=_monthly["count"],
+                marker_color="#2563EB", opacity=0.8,
+            ))
+            _fig_ev.update_layout(
+                title="Events per month",
+                height=240,
+                margin=dict(t=40, b=20, l=30, r=10),
+                plot_bgcolor="white", paper_bgcolor="white",
+            )
+            _fig_ev.update_xaxes(gridcolor="#E2E8F0")
+            _fig_ev.update_yaxes(gridcolor="#E2E8F0", title="Events")
+            st.plotly_chart(_fig_ev, use_container_width=True)
+
+            st.caption("First 15 events:")
+            _ev_show = _ev[["day_idx", "shift_type"]].copy()
+            if "date" in _ev.columns:
+                _ev_show.insert(0, "date", _ev["date"])
+            st.dataframe(_ev_show.head(15), use_container_width=True, hide_index=True)
+
 
 # ── Tab 2: Schedules ───────────────────────────────────────────────────────
 
@@ -534,6 +574,40 @@ with tab_schedules:
                     st.session_state.schedule_array = arr
                     st.session_state.schedule_providers = providers
                     st.rerun()
+
+    # ── Schedule detail (post-run) ──
+    if st.session_state.sim_ran and st.session_state.sim_baseline is not None:
+        st.divider()
+        with st.expander("View simulated schedule detail"):
+            _sched = st.session_state.sim_baseline.schedule
+            _n_p, _n_d = _sched.shape
+            _day_ct = (_sched == "d").sum(axis=1)
+            _ngt_ct = (_sched == "n").sum(axis=1)
+            _off_ct = (_sched == "o").sum(axis=1)
+
+            sc1, sc2, sc3 = st.columns(3)
+            sc1.metric("Avg day shifts / provider",
+                       f"{_day_ct.mean():.1f}  ({100*_day_ct.mean()/_n_d:.0f}%)")
+            sc2.metric("Avg night shifts / provider",
+                       f"{_ngt_ct.mean():.1f}  ({100*_ngt_ct.mean()/_n_d:.0f}%)")
+            sc3.metric("Avg days off / provider",
+                       f"{_off_ct.mean():.1f}  ({100*_off_ct.mean()/_n_d:.0f}%)")
+
+            # Sample provider table
+            _provs = st.session_state.sim_baseline.providers
+            _rng_s = np.random.default_rng(42)
+            _s_idx = np.sort(_rng_s.choice(_n_p, size=min(10, _n_p), replace=False))
+            _samp_df = pd.DataFrame({
+                "Provider":     [_provs[i] for i in _s_idx],
+                "Day shifts":   _day_ct[_s_idx],
+                "Night shifts": _ngt_ct[_s_idx],
+                "Days off":     _off_ct[_s_idx],
+                "Day %":        [f"{100*_day_ct[i]//_n_d}%" for i in _s_idx],
+                "Night %":      [f"{100*_ngt_ct[i]//_n_d}%" for i in _s_idx],
+                "Off %":        [f"{100*_off_ct[i]//_n_d}%" for i in _s_idx],
+            })
+            st.caption(f"Sample of {len(_s_idx)} providers (of {_n_p} total):")
+            st.dataframe(_samp_df, use_container_width=True, hide_index=True)
 
 
 # ── Tab 3: Exposure Analysis ───────────────────────────────────────────────
