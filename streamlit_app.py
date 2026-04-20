@@ -751,6 +751,11 @@ with tab_exposure:
                     xaxis_title="Day",
                     plot_bgcolor="white", paper_bgcolor="white",
                 )
+                for _wk in range(7, _show_days, 7):
+                    _fig_sched.add_vline(
+                        x=_wk - 0.5,
+                        line_width=1.5, line_color="#64748B", line_dash="solid",
+                    )
                 st.plotly_chart(_fig_sched, use_container_width=True)
 
 
