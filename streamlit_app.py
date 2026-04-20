@@ -541,10 +541,21 @@ with tab_schedules:
 with tab_exposure:
     st.header("Exposure Analysis")
 
-    thresh = st.slider("Readiness threshold (days since last exposure)",
-                       7, 730, st.session_state.readiness_threshold,
-                       help="Provider is 'ready' if they have had a live exposure within this window.")
-    st.session_state.readiness_threshold = thresh
+    thresh = st.number_input(
+        "Critical threshold (days between HALO events)",
+        min_value=1,
+        value=st.session_state.readiness_threshold,
+        step=1,
+    )
+    thresh = int(thresh)
+    if thresh > n_days:
+        st.error(
+            f"Threshold ({thresh} days) exceeds the simulation window ({n_days} days) — "
+            f"try a value under {n_days} days."
+        )
+        thresh = st.session_state.readiness_threshold
+    else:
+        st.session_state.readiness_threshold = thresh
     st.session_state.readiness_model = "binary"
 
     st.divider()
@@ -568,7 +579,7 @@ with tab_exposure:
                       f"{rdf['n_events'].median():.1f}")
             c2.metric("Median days between exposures",
                       f"{rdf['gap_median'].dropna().median():.0f}")
-            c3.metric(f"% with max gap > {thresh}d",
+            c3.metric(f"% exceeding {thresh}-day critical threshold",
                       f"{100 * n_exceed / n:.1f}%")
 
             # Percentile table
@@ -593,22 +604,7 @@ with tab_exposure:
 
             # Interpretation callout for threshold sweep
             _pct_t = 100 * (rdf["gap_max"].fillna(9999) > thresh).mean()
-            if _pct_t >= 80:
-                _interp = (f"**{_pct_t:.0f}%** of providers exceed the {thresh}-day gap threshold — "
-                           "consistent with the paper's community hospital finding of 98% "
-                           "(PMID: 41633464). Training may be needed to compensate for "
-                           "infrequent live exposure.")
-            elif _pct_t >= 40:
-                _interp = (f"**{_pct_t:.0f}%** of providers exceed the {thresh}-day gap threshold. "
-                           "Your event rate or shift density differs from the paper's community "
-                           "hospital setting. Evaluate whether current training frequency "
-                           "maintains adequate readiness.")
-            else:
-                _interp = (f"**{_pct_t:.0f}%** of providers exceed the {thresh}-day gap threshold — "
-                           "relatively low. Your event rate may be higher than a typical community "
-                           "hospital, suggesting live exposure alone contributes meaningfully to "
-                           "readiness.")
-            st.info(_interp)
+            st.info(f"**{_pct_t:.0f}%** of providers exceeded the {thresh}-day critical threshold.")
 
             with st.expander("Individual provider swimlanes (random sample)"):
                 n_swim = st.slider("Providers to display", 10, 80, 30, key="swimlane_n")
