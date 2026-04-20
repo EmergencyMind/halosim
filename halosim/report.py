@@ -224,17 +224,17 @@ def generate_pdf(
     pdf.ln(4)
 
     # Interpretation callout
-    pct_90 = 100 * (rdf["gap_max"].fillna(9999) > 90).mean()
-    if pct_90 >= 80:
-        interp = (f"{pct_90:.0f}% of providers exceed the 90-day gap benchmark  -  consistent with "
+    pct_t = 100 * (rdf["gap_max"].fillna(9999) > thresh).mean()
+    if pct_t >= 80:
+        interp = (f"{pct_t:.0f}% of providers exceed the {thresh}-day gap threshold  -  consistent with "
                   "the paper's community hospital finding of 98% (PMID: 41633464). Consider whether "
                   "your training frequency is sufficient to compensate for infrequent live exposure.")
-    elif pct_90 >= 40:
-        interp = (f"{pct_90:.0f}% of providers exceed the 90-day gap benchmark. "
+    elif pct_t >= 40:
+        interp = (f"{pct_t:.0f}% of providers exceed the {thresh}-day gap threshold. "
                   "Your event rate or shift density differs from the paper's community hospital setting. "
                   "Evaluate whether current training frequency maintains adequate readiness.")
     else:
-        interp = (f"{pct_90:.0f}% of providers exceed the 90-day gap benchmark  -  relatively low. "
+        interp = (f"{pct_t:.0f}% of providers exceed the {thresh}-day gap threshold  -  relatively low. "
                   "Your event rate or population size may be higher than a typical community hospital, "
                   "meaning live exposure alone may maintain meaningful readiness.")
     pdf.callout(f"Interpretation: {interp}")

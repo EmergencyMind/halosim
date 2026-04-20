@@ -63,7 +63,7 @@ def plot_gap_distribution(results_df: pd.DataFrame) -> go.Figure:
         )
 
     fig.update_layout(
-        title="Distribution of days between HALO event exposures",
+        title="Gap distribution across providers (includes run-in and run-out periods)",
         yaxis_title="Days",
         height=420,
         margin=dict(t=60, b=40),
@@ -81,6 +81,7 @@ def plot_gap_distribution(results_df: pd.DataFrame) -> go.Figure:
 def plot_threshold_sweep(
     results_df: pd.DataFrame,
     thresholds: list[int] | None = None,
+    threshold: int = 90,
 ) -> go.Figure:
     """
     Line chart: % of providers whose maximum inter-exposure gap exceeds threshold,
@@ -105,10 +106,10 @@ def plot_threshold_sweep(
         name="% exceeding threshold",
     ))
 
-    # Reference line at 90 days
+    # Reference line at readiness threshold
     fig.add_vline(
-        x=90, line_dash="dash", line_color=_ORANGE,
-        annotation_text="90 days", annotation_position="top right",
+        x=threshold, line_dash="dash", line_color=_ORANGE,
+        annotation_text=f"{threshold} days", annotation_position="top right",
     )
 
     fig.update_layout(

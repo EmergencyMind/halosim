@@ -253,9 +253,64 @@ if st.session_state.sim_ran and st.session_state.sim_baseline is not None:
 # Tabs
 # ---------------------------------------------------------------------------
 
-tab_events, tab_schedules, tab_exposure, tab_training = st.tabs(
-    ["📅 Events", "👥 Schedules", "📊 Exposure Analysis", "🏋️ Training Simulation"]
+tab_start, tab_events, tab_schedules, tab_exposure, tab_training = st.tabs(
+    ["🟢 Start Here", "🔥 Events", "📅 Schedules", "📊 Exposure Analysis", "🏋️ Training Simulation"]
 )
+
+# ── Tab 0: Start Here ──────────────────────────────────────────────────────
+
+with tab_start:
+    st.header("Welcome to HaloSim")
+    st.markdown(
+        "HaloSim models how often providers encounter **high-acuity low-occurrence (HALO) events** "
+        "on shift, and simulates whether training programs can fill the readiness gaps that result "
+        "from infrequent live exposure. Based on the methodology in **PMID: 41633464**."
+    )
+
+    st.divider()
+    st.subheader("How to run a simulation")
+
+    steps = [
+        ("🔧 Sidebar", "Set your **simulation window** (e.g. 365 days), **number of providers**, and "
+         "**random seed**. These apply to all tabs."),
+        ("🔥 Events tab", "Choose **Generate** to draw events from a Poisson model (set events/year), "
+         "or **Upload** a CSV with columns `date` and `shift_type` (day/night). "
+         "The event rate drives how often providers are exposed on shift."),
+        ("📅 Schedules tab", "Choose a **schedule type** (e.g. 3/7 Day, Progressive) to randomly "
+         "generate a shift schedule for each provider, or **Upload** a CSV with columns "
+         "`provider_id`, `date`, and `shift_type` (day/night/off). "
+         "Each provider gets an independently randomised schedule."),
+        ("▶ Run Simulation", "Click **▶ Run Simulation** in the sidebar. Results are cached — "
+         "re-run any time you change settings. The banner at the top will turn orange if "
+         "settings have changed since the last run."),
+        ("📊 Exposure Analysis tab", "View **gap statistics**: how many days pass between "
+         "exposures for each provider, including the lead-in (day 0 → first exposure) and "
+         "trail-out (last exposure → end of window). Adjust the **readiness threshold** to "
+         "define the maximum acceptable gap."),
+        ("🏋️ Training Simulation tab", "Select a **training program** (monthly, quarterly, etc.) "
+         "and compare how it affects population readiness over time vs. live exposure alone."),
+    ]
+
+    for i, (label, desc) in enumerate(steps, 1):
+        c_num, c_label, c_desc = st.columns([0.35, 1.2, 4])
+        with c_num:
+            st.markdown(f"### {i}")
+        with c_label:
+            st.markdown(f"**{label}**")
+        with c_desc:
+            st.markdown(desc)
+        if i < len(steps):
+            st.markdown("<hr style='margin:0.3rem 0; border-color:#E2E8F0'>",
+                        unsafe_allow_html=True)
+
+    st.divider()
+    st.subheader("Key concepts")
+    st.markdown("""
+- **HALO event** — A high-acuity, low-occurrence event (e.g. cardiac arrest) that requires practiced skills but happens rarely enough that most providers go months between exposures.
+- **Readiness threshold** — The maximum gap (in days) before a provider is considered to have lost procedural readiness. Default: 90 days.
+- **Gap** — The interval between consecutive exposures for a single provider. Includes lead-in (days before first exposure) and trail-out (days after last exposure to end of window).
+- **On-shift readiness** — The proportion of providers who are *currently on shift* and within their readiness threshold. This is the primary metric — off-shift providers are excluded.
+""")
 
 # ── Tab 1: Events ──────────────────────────────────────────────────────────
 
@@ -301,24 +356,18 @@ with tab_events:
                 f"Night rate: {rate * (100 - day_pct) / 100:.3f}/day"
             )
 
-        st.divider()
-        with st.expander("Load sample data instead"):
-            if st.button("Use sample_events.csv"):
-                sample = DATA_DIR / "sample_events.csv"
-                df = pd.read_csv(sample)
-                df["date"] = pd.to_datetime(df["date"]).dt.date
-                df["day_idx"] = (
-                    pd.to_datetime(df["date"]) - pd.Timestamp("2024-01-01")
-                ).dt.days
-                st.session_state.events_df = df[["day_idx", "date", "shift_type"]]
-                st.session_state.event_source = "Upload CSV / Excel"
-                st.rerun()
-
     else:  # upload
+        st.caption("Expected format:")
+        _sample_ev = pd.DataFrame({
+            "date":       ["2024-01-03", "2024-01-11", "2024-01-19", "2024-02-01", "2024-02-14"],
+            "shift_type": ["day",        "night",       "day",        "night",      "day"],
+        })
+        st.dataframe(_sample_ev, use_container_width=False, hide_index=True)
+        st.caption("Optional: add an `hour` column (0–23) to enable shift-boundary join (Advanced).")
+
         uploaded = st.file_uploader(
             "Upload events file",
             type=["csv", "xlsx", "xls"],
-            help="Required columns: date (YYYY-MM-DD), shift_type (day/night).",
         )
         if uploaded:
             raw = uploaded.read()
@@ -337,7 +386,7 @@ with tab_events:
             st.dataframe(edf.head(10), use_container_width=True)
 
         with st.expander("Advanced event settings"):
-            st.caption("Enable the hour column for complex shift-boundary join.")
+            st.caption("Enable the hour column and complex shift-boundary join.")
             allow_hour_adv = st.checkbox("File includes 'hour' column (0–23)", value=False,
                                          key="allow_hour_adv")
             if allow_hour_adv and uploaded:
@@ -346,22 +395,22 @@ with tab_events:
                 if df2 is not None:
                     st.session_state.events_df = df2
 
-        st.divider()
-        join_opts = ["simple", "complex (requires hour column)"]
-        join = st.selectbox(
-            "Exposure join type",
-            join_opts,
-            index=0 if st.session_state.join_type == "simple" else 1,
-            help="Complex join counts events within ±N hours of shift boundary.",
-        )
-        st.session_state.join_type = "simple" if join == "simple" else "complex"
-        if st.session_state.join_type == "complex":
-            win = st.slider("Window (hours)", 1, 8, st.session_state.complex_window)
-            st.session_state.complex_window = win
-            if st.session_state.events_df is not None and \
-               "hour" not in st.session_state.events_df.columns:
-                st.warning("Complex join requires an 'hour' column in the events file. "
-                           "Falling back to simple join.")
+            st.divider()
+            join_opts = ["simple", "complex (requires hour column)"]
+            join = st.selectbox(
+                "Exposure join type",
+                join_opts,
+                index=0 if st.session_state.join_type == "simple" else 1,
+                help="Complex join counts events within ±N hours of shift boundary.",
+            )
+            st.session_state.join_type = "simple" if join == "simple" else "complex"
+            if st.session_state.join_type == "complex":
+                win = st.slider("Window (hours)", 1, 8, st.session_state.complex_window)
+                st.session_state.complex_window = win
+                if st.session_state.events_df is not None and \
+                   "hour" not in st.session_state.events_df.columns:
+                    st.warning("Complex join requires an 'hour' column in the events file. "
+                               "Falling back to simple join.")
 
 
 # ── Tab 2: Schedules ───────────────────────────────────────────────────────
@@ -401,13 +450,13 @@ with tab_schedules:
         if current_type not in SCHEDULE_TYPES:
             current_type = DEFAULT_SCHEDULE_TYPE
 
-        selected_type = st.selectbox(
+        selected_type = st.radio(
             "Schedule type",
             SCHEDULE_TYPES,
             index=SCHEDULE_TYPES.index(current_type),
+            captions=list(_type_descriptions.values()),
         )
         st.session_state.schedule_type = selected_type
-        st.caption(_type_descriptions[selected_type])
 
         with st.expander("Advanced schedule settings"):
             st.caption(
@@ -439,11 +488,18 @@ with tab_schedules:
                 st.session_state.schedule_night_pct = None
 
     elif sched_source == "Upload CSV / Excel":
+        st.caption("Expected format:")
+        _sample_sched = pd.DataFrame({
+            "provider_id": ["P0001", "P0001", "P0001", "P0002", "P0002"],
+            "date":        ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-01", "2024-01-02"],
+            "shift_type":  ["day",        "off",         "night",      "night",      "off"],
+        })
+        st.dataframe(_sample_sched, use_container_width=False, hide_index=True)
+        st.caption("One row per provider per day. `shift_type`: day / night / off (or d / n / o).")
+
         uploaded_s = st.file_uploader(
             "Upload schedule file",
             type=["csv", "xlsx", "xls"],
-            help="Required columns: provider_id, date (YYYY-MM-DD), "
-                 "shift_type (day/night/off or d/n/o)",
             key="schedule_upload",
         )
         if uploaded_s:
@@ -532,23 +588,23 @@ with tab_exposure:
                             use_container_width=True)
             st.plotly_chart(plot_gap_distribution(rdf),
                             use_container_width=True)
-            st.plotly_chart(plot_threshold_sweep(rdf),
+            st.plotly_chart(plot_threshold_sweep(rdf, threshold=thresh),
                             use_container_width=True)
 
             # Interpretation callout for threshold sweep
-            _pct_90 = 100 * (rdf["gap_max"].fillna(9999) > 90).mean()
-            if _pct_90 >= 80:
-                _interp = (f"**{_pct_90:.0f}%** of providers exceed the 90-day gap benchmark — "
+            _pct_t = 100 * (rdf["gap_max"].fillna(9999) > thresh).mean()
+            if _pct_t >= 80:
+                _interp = (f"**{_pct_t:.0f}%** of providers exceed the {thresh}-day gap threshold — "
                            "consistent with the paper's community hospital finding of 98% "
                            "(PMID: 41633464). Training may be needed to compensate for "
                            "infrequent live exposure.")
-            elif _pct_90 >= 40:
-                _interp = (f"**{_pct_90:.0f}%** of providers exceed the 90-day gap benchmark. "
+            elif _pct_t >= 40:
+                _interp = (f"**{_pct_t:.0f}%** of providers exceed the {thresh}-day gap threshold. "
                            "Your event rate or shift density differs from the paper's community "
                            "hospital setting. Evaluate whether current training frequency "
                            "maintains adequate readiness.")
             else:
-                _interp = (f"**{_pct_90:.0f}%** of providers exceed the 90-day gap benchmark — "
+                _interp = (f"**{_pct_t:.0f}%** of providers exceed the {thresh}-day gap threshold — "
                            "relatively low. Your event rate may be higher than a typical community "
                            "hospital, suggesting live exposure alone contributes meaningfully to "
                            "readiness.")
