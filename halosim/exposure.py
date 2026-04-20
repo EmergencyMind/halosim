@@ -36,7 +36,7 @@ def compute_exposure(sim) -> tuple[np.ndarray, pd.DataFrame]:
 
     results = []
     for i in range(n_providers):
-        stats = _compute_gaps(exposure_matrix[i], sim.readiness_threshold_days)
+        stats = _compute_gaps(exposure_matrix[i], sim.readiness_threshold_days, sim.n_days)
         stats["provider_id"] = sim.providers[i]
         results.append(stats)
 
@@ -135,7 +135,7 @@ def compute_exposure_complex(
 
     results = []
     for i in range(n_providers):
-        stats = _compute_gaps(exposure[i], sim.readiness_threshold_days)
+        stats = _compute_gaps(exposure[i], sim.readiness_threshold_days, sim.n_days)
         stats["provider_id"] = sim.providers[i]
         results.append(stats)
 
@@ -152,40 +152,30 @@ def compute_exposure_complex(
 # Per-provider gap statistics
 # ---------------------------------------------------------------------------
 
-def _compute_gaps(exposure_row: np.ndarray, threshold: int) -> dict:
-    """Compute inter-exposure gap statistics for one provider."""
+def _compute_gaps(exposure_row: np.ndarray, threshold: int, n_days: int) -> dict:
+    """Compute inter-exposure gap statistics for one provider.
+
+    Gap set includes:
+      - Lead-in: days from simulation start to first exposure
+      - Between-event gaps: np.diff(exposure_days)
+      - Trail-out: days from last exposure to end of window
+
+    Providers with zero exposures have a single gap equal to n_days.
+    Providers with one exposure have two gaps: lead-in and trail-out.
+    """
     exposure_days = np.where(exposure_row)[0]
     n = len(exposure_days)
 
     if n == 0:
-        return {
-            "n_events": 0,
-            "t2first": None,
-            "gap_min": None,
-            "gap_q25": None,
-            "gap_median": None,
-            "gap_mean": None,
-            "gap_q75": None,
-            "gap_max": None,
-            "max_gap_exceeds_threshold": True,
-        }
+        gaps = np.array([float(n_days)])
+    else:
+        lead_in   = float(exposure_days[0])
+        trail_out = float(n_days - 1 - exposure_days[-1])
+        between   = np.diff(exposure_days).astype(float)
+        gaps = np.concatenate([[lead_in], between, [trail_out]])
 
-    t2first = int(exposure_days[0])
+    t2first = int(exposure_days[0]) if n > 0 else None
 
-    if n == 1:
-        return {
-            "n_events": 1,
-            "t2first": t2first,
-            "gap_min": None,
-            "gap_q25": None,
-            "gap_median": None,
-            "gap_mean": None,
-            "gap_q75": None,
-            "gap_max": None,
-            "max_gap_exceeds_threshold": True,
-        }
-
-    gaps = np.diff(exposure_days).astype(float)
     return {
         "n_events": n,
         "t2first": t2first,
