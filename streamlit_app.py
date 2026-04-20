@@ -621,18 +621,55 @@ with tab_exposure:
                 )
 
             st.divider()
+            st.subheader("Downloads")
             _dl1, _dl2 = st.columns(2)
+
+            # 1. Exposure statistics CSV (gap_mean rounded to 3 dp)
             with _dl1:
-                csv = rdf.to_csv(index=False).encode()
+                _rdf_rounded = rdf.copy()
+                if "gap_mean" in _rdf_rounded.columns:
+                    _rdf_rounded["gap_mean"] = _rdf_rounded["gap_mean"].round(3)
                 st.download_button(
-                    "Download per-provider gap statistics (CSV)",
-                    data=csv,
+                    "📥 Exposure statistics (CSV)",
+                    data=_rdf_rounded.to_csv(index=False).encode(),
                     file_name="halosim_exposure_results.csv",
                     mime="text/csv",
                     use_container_width=True,
                 )
+
+            # 2. Simulated events CSV
             with _dl2:
-                if st.button("Generate PDF report", use_container_width=True):
+                _ev_dl = sim.events[["day_idx", "shift_type"]].copy()
+                if "date" in sim.events.columns:
+                    _ev_dl.insert(0, "date", sim.events["date"])
+                st.download_button(
+                    "📥 Simulated events (CSV)",
+                    data=_ev_dl.to_csv(index=False).encode(),
+                    file_name="halosim_events.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+            _dl3, _dl4 = st.columns(2)
+
+            # 3. Simulated schedules CSV (long format: provider_id, day, shift_type)
+            with _dl3:
+                _sched_rows = []
+                for _pi, _pid in enumerate(sim.providers):
+                    for _di in range(sim.n_days):
+                        _sched_rows.append((_pid, _di + 1, sim.schedule[_pi, _di]))
+                _sched_dl = pd.DataFrame(_sched_rows, columns=["provider_id", "day", "shift_type"])
+                st.download_button(
+                    "📥 Simulated schedules (CSV)",
+                    data=_sched_dl.to_csv(index=False).encode(),
+                    file_name="halosim_schedules.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+            # 4. PDF summary report
+            with _dl4:
+                if st.button("📄 Generate PDF report", use_container_width=True):
                     with st.spinner("Rendering report…"):
                         try:
                             _prog_label = st.session_state.get("_training_prog_label",
