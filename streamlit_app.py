@@ -260,7 +260,7 @@ with st.sidebar:
         "Custom":           "custom",
         "Targeted":         "targeted",
     }
-    _sidebar_prog_label = st.radio(
+    _sidebar_prog_label = st.selectbox(
         "Training program",
         list(_sidebar_prog_map.keys()),
         index=list(_sidebar_prog_map.values()).index(
@@ -304,7 +304,7 @@ if st.session_state.sim_ran and st.session_state.sim_baseline is not None:
 # ---------------------------------------------------------------------------
 
 tab_start, tab_events, tab_schedules, tab_exposure, tab_training = st.tabs(
-    ["🟢 Start Here", "🔥 Events", "📅 Schedules", "📊 Exposure Analysis", "🏋️ Training Simulation"]
+    ["🟢 Start Here", "🔥 Events", "📅 Schedules", "📊 Exposure Analysis", "🏋️ Training Effects"]
 )
 
 # ── Tab 0: Start Here ──────────────────────────────────────────────────────
@@ -836,7 +836,7 @@ with tab_exposure:
 # ── Tab 4: Training Simulation ─────────────────────────────────────────────
 
 with tab_training:
-    st.header("Training Simulation")
+    st.header("Training Effects")
 
     _active_prog = st.session_state.get("training_program", "none")
     _prog_display_map = {
