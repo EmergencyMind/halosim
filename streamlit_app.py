@@ -722,44 +722,18 @@ with tab_exposure:
                            f"{_off_ct.mean():.1f}  ({100*_off_ct.mean()/_n_d:.0f}%)")
 
                 # Shift pattern heatmap — first 6 weeks, 10 random providers
-                # NaN separator columns are inserted between weeks for clear visual gaps
                 _rng_s = np.random.default_rng(sim.seed)
                 _s_idx = np.sort(_rng_s.choice(_n_p, size=min(10, _n_p), replace=False))
                 _show_days = min(42, _n_d)
                 _n_weeks = _show_days // 7
-                _submat = _sched[np.ix_(_s_idx, np.arange(_n_weeks * 7))]
-                _enc_raw = np.where(_submat == "d", 2, np.where(_submat == "n", 1, 0)).astype(float)
-
-                # Interleave 7-day blocks with NaN separator columns
-                _n_samp = len(_s_idx)
-                _cols_per_week = 7
-                _sep = np.full((_n_samp, 1), np.nan)
-                _blocks = [_enc_raw[:, w*7:(w+1)*7] for w in range(_n_weeks)]
-                _enc_sep = np.concatenate(
-                    [np.concatenate([b, _sep], axis=1) for b in _blocks[:-1]] + [_blocks[-1]],
-                    axis=1,
-                )
-                # Build x labels: "1"–"7", gap, "8"–"14", gap, ...
-                _xlabels = []
-                for w in range(_n_weeks):
-                    for d in range(7):
-                        _xlabels.append(f"{w*7+d+1}")
-                    if w < _n_weeks - 1:
-                        _xlabels.append(f"W{w+1}|W{w+2}")  # separator tick (hidden)
-                # Week annotation labels centered on each 8-column block
-                _week_annotations = []
-                for w in range(_n_weeks):
-                    _cx = w * 8 + 3  # center of the 7-day block in the widened axis
-                    _week_annotations.append(dict(
-                        x=_xlabels[_cx], y=1.04, xref="x", yref="paper",
-                        text=f"Wk {w+1}", showarrow=False,
-                        font=dict(size=10, color="#64748B"),
-                    ))
-
+                _submat = _sched[np.ix_(_s_idx, np.arange(_show_days))]
+                _enc = np.where(_submat == "d", 2, np.where(_submat == "n", 1, 0)).astype(float)
                 _plabels = [sim.providers[i] for i in _s_idx]
+                _n_samp = len(_s_idx)
+
                 _fig_sched = _go.Figure(_go.Heatmap(
-                    z=_enc_sep,
-                    x=_xlabels,
+                    z=_enc,
+                    x=list(range(1, _show_days + 1)),
                     y=_plabels,
                     colorscale=[[0, "#F1F5F9"], [0.5, "#7C3AED"], [1.0, "#2563EB"]],
                     showscale=True,
@@ -771,16 +745,19 @@ with tab_exposure:
                     zmin=0, zmax=2,
                     xgap=1, ygap=2,
                 ))
+                for _wk in range(1, _n_weeks):
+                    _fig_sched.add_vline(
+                        x=_wk * 7 + 0.5,
+                        line_width=2, line_color="#334155", line_dash="solid",
+                    )
                 _fig_sched.update_layout(
                     title=f"Shift pattern — first {_n_weeks} weeks, sample of {_n_samp} providers",
                     height=max(280, _n_samp * 28),
-                    margin=dict(t=60, b=30, l=80, r=60),
+                    margin=dict(t=50, b=30, l=80, r=60),
+                    xaxis=dict(title="Day", tickmode="array",
+                               tickvals=[w * 7 + 4 for w in range(_n_weeks)],
+                               ticktext=[f"Wk {w+1}" for w in range(_n_weeks)]),
                     plot_bgcolor="white", paper_bgcolor="white",
-                    annotations=_week_annotations,
-                    xaxis=dict(
-                        showticklabels=False,
-                        showgrid=False,
-                    ),
                 )
                 st.plotly_chart(_fig_sched, use_container_width=True)
 
