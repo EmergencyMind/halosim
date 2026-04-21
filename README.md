@@ -12,31 +12,77 @@ simulation layer shows how training programs affect population readiness over ti
 
 The methodology is based on:
 
-> Dworkis DA. *Code Blue Blindspots: Quantifying Nursing Exposure to Cardiac Arrest in a
+> PMID: 41633464 — *Code Blue Blindspots: Quantifying Nursing Exposure to Cardiac Arrest in a
 > Community Hospital.* Resuscitation, 2026.
 
 ---
 
 ## Using the app
 
-### Basic mode
+### 1. Set sidebar parameters
 
-1. **Events tab** — set a Poisson event rate (events/day). Rate 0.14 ≈ ~50 cardiac arrest-equivalents/year.
-2. **Schedules tab** — pick one or more shift templates; the app randomly assigns each provider a template.
-3. Click **▶ Run Simulation** in the sidebar.
-4. **Exposure Analysis tab** — view exposure distributions, threshold sweep chart, and per-provider summary.
-5. **Training Simulation tab** — select a training frequency (monthly, quarterly, etc.) and compare population readiness with vs. without training.
+Before running, configure in the **sidebar**:
 
-### Advanced mode
+- **Simulation window** — 90 / 180 / 365 / 730 days
+- **Number of providers** — default 200 (max 5,000)
+- **Random seed** — controls all Poisson sampling and schedule generation; set for reproducibility
+- **Critical threshold (days)** — the maximum acceptable gap between HALO exposures; providers
+  exceeding this are flagged as under-exposed (default 90 days)
+- **Training program** — None / Monthly (28d) / Bi-monthly (56d) / Quarterly (84d) / Custom / Targeted
 
-Toggle **Advanced** in the sidebar to unlock:
+### 2. Configure events (Events tab)
 
-- Separate day/night event rates and seasonal variation
-- Custom 28-day schedule patterns (enter any d/n/o string)
-- CSV/Excel upload for both events and schedules
-- Complex exposure join (requires an `hour` column in your events file)
-- All four readiness decay models (binary, exponential, Ebbinghaus, two-threshold step)
-- Custom training intervals, partial training boost, and targeted training (trains only under-ready providers)
+**Generate (Poisson MC)** — draw events from a Poisson model:
+- Set **events/year** (slider; ~51/year matches PMID: 41633464 community hospital rate)
+- Advanced settings: adjust % occurring on **day vs. night shifts** (default 50/50)
+- One-click loaders: **Load sample events** (48 events / year) or **Load full demo scenario**
+  (events + schedule pre-loaded, simulation auto-runs)
+
+**Upload CSV / Excel** — upload your own event data.
+
+### 3. Configure schedules (Schedules tab)
+
+**Generate schedules** — randomly generates an independent schedule for each provider:
+
+| Schedule type | Description |
+|---|---|
+| 3/7 Day | 3 randomly placed day shifts per 7-day week, rest off |
+| 3/7 Night | 3 randomly placed night shifts per 7-day week, rest off |
+| 4/7 Day | 4 randomly placed day shifts per 7-day week, rest off |
+| 4/7 Night | 4 randomly placed night shifts per 7-day week, rest off |
+| Progressive (day & night mix) | 3–4 shifts per week, each randomly assigned day or night |
+| Random | Each day drawn from empirical weights: 25% day, 23% night, 52% off (PMID: 41633464) |
+
+Advanced schedule settings: override with custom % day / % night sliders.
+
+**Upload CSV / Excel** — upload a pre-built schedule.
+
+### 4. Run
+
+Click **▶ Run Simulation** in the sidebar. Results are cached — re-run any time settings change.
+The banner at the top turns **orange** if any setting has changed since the last run.
+
+### 5. Exposure Analysis tab
+
+- Summary metrics: median exposures / provider, median days between exposures, % exceeding threshold
+- Percentile table (5th / 25th / 50th / 75th / 95th) for max gap, median gap, exposures / provider
+- Charts: exposure count histogram, gap distribution (min / median / max), threshold sweep
+- Individual provider swimlane heatmap
+- Simulated events and schedule detail expanders (with monthly bar chart and heatmap)
+- Downloads: exposure statistics CSV, simulated events CSV, simulated schedules CSV, PDF report
+
+### 6. Training Effects tab
+
+The training program is selected in the **sidebar** before running. This tab shows:
+- Summary metrics: average readiness with vs. without training
+- Comparison chart: overlay multiple programs on one chart
+  - Pre-populated with "No training" + your selected program
+  - Toggle between **"Use my current settings"** (Custom/Targeted reflect your controls)
+    and **standardised defaults** (all programs use fixed reference intervals for apples-to-apples comparison)
+- Additional controls appear only when relevant:
+  - **Custom**: training interval slider + first training day
+  - **Targeted**: readiness threshold + minimum interval between sessions
+  - **Custom / Targeted / any non-None**: training effectiveness (full reset or partial boost)
 
 ---
 
@@ -48,7 +94,7 @@ Toggle **Advanced** in the sidebar to unlock:
 |--------|------|-------|
 | `date` | YYYY-MM-DD | Required |
 | `shift_type` | `day` or `night` | Required |
-| `hour` | integer 0–23 | Optional; enables complex join in Advanced mode |
+| `hour` | integer 0–23 | Optional; enables shift-boundary join (Advanced) |
 
 ### Schedule file (CSV or Excel)
 
@@ -62,46 +108,34 @@ Missing dates for a provider default to `off`. Maximum 5,000 providers.
 
 ---
 
-## Built-in schedule templates
-
-All templates are 28-day repeating cycles (`d` = day shift, `n` = night, `o` = off):
-
-| Template | 28-day pattern |
-|----------|---------------|
-| 3-on Day / 4-off | `dddoooodddoooo...` |
-| 3-on Night / 4-off | `nnnoooonnnoooo...` |
-| 4-on Day / 3-off | `ddddoooddddooo...` |
-| 4-on Night / 3-off | `nnnnooonnnnooo...` |
-| Rotating Day→Night | Day and night shifts alternating |
-| Progressive (nurse-style) | Mixed d/n/o per day (matches paper's Line A–I logic) |
-
----
-
 ## Sample data
 
-`data/sample_events.csv` — 48 synthetic events over 365 days (Poisson, seed 42, ~0.14/day)  
-`data/sample_schedule.csv` — 20 providers × 365 days, mixed 3/7 and 4/7 templates
+`data/sample_events.csv` — 48 synthetic events over 365 days (Poisson, seed 42)  
+`data/sample_schedule.csv` — 20 providers × 365 days
 
-These are available via the **Load sample data** buttons inside the Events and Schedules tabs.
+Use **Load sample events** or **Load full demo scenario** (Events tab, Generate mode) to load
+these with one click. "Load full demo scenario" also pre-loads the schedule and auto-runs the
+simulation.
 
 ---
 
 ## Reproducibility
 
-Set the **Random seed** in the sidebar to reproduce any result. The seed controls all
-Poisson event generation and schedule assignment. Results are identical across runs with the
-same seed.
+Set the **Random seed** in the sidebar to reproduce any result. The seed controls all Poisson
+event generation and schedule randomisation. Results are identical across runs with the same seed.
 
 ---
 
 ## Limitations
 
 - Poisson-generated events will not exactly reproduce real-data results (e.g., the 98%
-  exceeding-90-days figure from Dworkis 2026) because real event timing is clustered differently
-  than Poisson. To reproduce the paper exactly, upload the actual event data.
+  exceeding-90-days figure from PMID: 41633464) because real event timing differs from Poisson.
+  Upload your actual event file to reproduce the paper's results.
 - Instances have ~1 GB RAM. Population sizes above ~2,000 providers over 730 days may be slow.
-- Targeted training is a sequential day-loop and is slower than vectorized modes;
+- Targeted training uses a sequential day-loop and is slower than vectorised modes;
   expect a few extra seconds for large populations.
+- Readiness is modelled as a binary threshold (ready / not ready). The gap between exposures
+  determines whether a provider remains within threshold.
 
 ---
 
@@ -109,7 +143,7 @@ same seed.
 
 If you use HaloSim in research, please cite:
 
-> Dworkis DA. *Code Blue Blindspots: Quantifying Nursing Exposure to Cardiac Arrest in a
+> PMID: 41633464 — *Code Blue Blindspots: Quantifying Nursing Exposure to Cardiac Arrest in a
 > Community Hospital.* Resuscitation, 2026.  
 > HaloSim: https://sfl-halosim.streamlit.app/ (https://github.com/EmergencyMind/halosim)
 

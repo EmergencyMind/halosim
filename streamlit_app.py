@@ -123,6 +123,13 @@ def _init_state():
         "sim_trained": None,
         "sim_ran": False,
         "_last_run_hash": None,
+        # upload byte caches (prevent double-read bug)
+        "events_upload_bytes": None,
+        "events_upload_name": "",
+        "schedule_upload_bytes": None,
+        "schedule_upload_name": "",
+        # auto-run flag for demo loader
+        "_auto_run": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -380,6 +387,40 @@ with tab_events:
     st.session_state.event_source = event_source
 
     if event_source == "Generate (Poisson MC)":
+        # ── One-click sample / demo loaders ──────────────────────────────────
+        _lc1, _lc2 = st.columns(2)
+        with _lc1:
+            if st.button("Load sample events (48 events / year)", use_container_width=True):
+                _raw = (DATA_DIR / "sample_events.csv").read_bytes()
+                _df, _errs = load_events_from_upload(_raw, "sample_events.csv", n_days)
+                if _df is not None:
+                    st.session_state.events_df    = _df
+                    st.session_state.event_source = "Upload CSV / Excel"
+                    st.session_state.events_errors = _errs
+                    st.rerun()
+        with _lc2:
+            if st.button("Load full demo scenario", use_container_width=True,
+                         help="Loads sample events + sample schedule (20 providers) and runs the simulation."):
+                # events
+                _raw_ev = (DATA_DIR / "sample_events.csv").read_bytes()
+                _df_ev, _ = load_events_from_upload(_raw_ev, "sample_events.csv", 365)
+                # schedule
+                _raw_sc = (DATA_DIR / "sample_schedule.csv").read_bytes()
+                _arr, _provs, _ = load_schedule_from_upload(_raw_sc, "sample_schedule.csv", 365)
+                if _df_ev is not None and _arr is not None:
+                    st.session_state.events_df          = _df_ev
+                    st.session_state.event_source       = "Upload CSV / Excel"
+                    st.session_state.events_errors      = []
+                    st.session_state.schedule_array     = _arr
+                    st.session_state.schedule_providers = _provs
+                    st.session_state.schedule_source    = "Upload CSV / Excel"
+                    st.session_state.schedule_errors    = []
+                    st.session_state.n_days             = 365
+                    st.session_state.n_providers        = len(_provs)
+                    st.session_state._auto_run          = True
+                    st.rerun()
+
+        st.divider()
         rate_per_year = st.slider(
             "Event rate (events / year)",
             min_value=1,
@@ -422,12 +463,17 @@ with tab_events:
             "Upload events file",
             type=["csv", "xlsx", "xls"],
         )
-        if uploaded:
-            raw = uploaded.read()
-            df, errs = load_events_from_upload(
-                raw, uploaded.name, n_days,
-                allow_hour_col=False,
-            )
+        # Read bytes once and cache — prevents empty re-read on subsequent reruns
+        if uploaded is not None:
+            if uploaded.name != st.session_state.events_upload_name:
+                # New file: read and cache
+                st.session_state.events_upload_bytes = uploaded.read()
+                st.session_state.events_upload_name  = uploaded.name
+                st.session_state.events_errors       = []
+                st.session_state.events_df           = None
+            _ev_bytes = st.session_state.events_upload_bytes
+            _ev_name  = st.session_state.events_upload_name
+            df, errs = load_events_from_upload(_ev_bytes, _ev_name, n_days, allow_hour_col=False)
             st.session_state.events_errors = errs
             if df is not None:
                 st.session_state.events_df = df
@@ -442,9 +488,13 @@ with tab_events:
             st.caption("Enable the hour column and complex shift-boundary join.")
             allow_hour_adv = st.checkbox("File includes 'hour' column (0–23)", value=False,
                                          key="allow_hour_adv")
-            if allow_hour_adv and uploaded:
-                raw = uploaded.read() if hasattr(uploaded, "read") else b""
-                df2, errs2 = load_events_from_upload(raw, uploaded.name, n_days, allow_hour_col=True)
+            if allow_hour_adv and st.session_state.events_upload_bytes:
+                # Reuse cached bytes — no second read needed
+                df2, errs2 = load_events_from_upload(
+                    st.session_state.events_upload_bytes,
+                    st.session_state.events_upload_name,
+                    n_days, allow_hour_col=True,
+                )
                 if df2 is not None:
                     st.session_state.events_df = df2
 
@@ -556,11 +606,17 @@ with tab_schedules:
             type=["csv", "xlsx", "xls"],
             key="schedule_upload",
         )
-        if uploaded_s:
-            raw = uploaded_s.read()
-            arr, providers, errs = load_schedule_from_upload(
-                raw, uploaded_s.name, n_days
-            )
+        # Read bytes once and cache — prevents empty re-read on subsequent reruns
+        if uploaded_s is not None:
+            if uploaded_s.name != st.session_state.schedule_upload_name:
+                st.session_state.schedule_upload_bytes = uploaded_s.read()
+                st.session_state.schedule_upload_name  = uploaded_s.name
+                st.session_state.schedule_errors       = []
+                st.session_state.schedule_array        = None
+                st.session_state.schedule_providers    = None
+            _sc_bytes = st.session_state.schedule_upload_bytes
+            _sc_name  = st.session_state.schedule_upload_name
+            arr, providers, errs = load_schedule_from_upload(_sc_bytes, _sc_name, n_days)
             st.session_state.schedule_errors = errs
             if arr is not None:
                 st.session_state.schedule_array = arr
@@ -931,6 +987,26 @@ with tab_training:
             _default_sel = ["No training"] + (
                 [_active_label] if _active_label != "No training" else []
             )
+
+            # Toggle: use session-state settings vs standardised defaults
+            _use_my_settings = st.toggle(
+                "Use my current Custom/Targeted settings",
+                value=True,
+                key="compare_use_my_settings",
+                help=(
+                    "ON: the Custom and Targeted lines reflect your current interval / "
+                    "threshold settings above.  "
+                    "OFF: all programs use standardised defaults (monthly=28d, "
+                    "bi-monthly=56d, quarterly=84d, custom=28d, targeted=50% threshold) "
+                    "so comparisons are directly apples-to-apples."
+                ),
+            )
+            if not _use_my_settings:
+                st.caption(
+                    "Standardised mode — all programs use fixed defaults regardless of "
+                    "the controls above."
+                )
+
             _selected = st.multiselect(
                 "Programs to compare",
                 list(_compare_options.keys()),
@@ -944,7 +1020,7 @@ with tab_training:
                 _compare_data: dict[str, np.ndarray] = {}
                 for _lbl in _selected:
                     _prog = _compare_options[_lbl]
-                    _is_active = (_prog == _active_prog)
+                    _is_active = _use_my_settings and (_prog == _active_prog)
                     _csim = _run_sim(
                         _sb.n_days, tuple(_sb.providers), _sb.schedule, _sb.events,
                         _sb.seed,
@@ -998,7 +1074,8 @@ with tab_training:
 # Run simulation (triggered by sidebar button)
 # ---------------------------------------------------------------------------
 
-if run_btn:
+if run_btn or st.session_state.get("_auto_run", False):
+    st.session_state._auto_run = False   # consume flag immediately
     errors = []
 
     # 1. Build events
