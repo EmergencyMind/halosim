@@ -27,6 +27,7 @@ from halosim.viz import (
     plot_exposure_count_histogram,
     plot_gap_distribution,
     plot_individual_swimlanes,
+    plot_readiness_baseline,
     plot_readiness_timeseries,
     plot_threshold_sweep,
     plot_training_comparison,
@@ -122,7 +123,9 @@ def _init_state():
         "sim_baseline": None,
         "sim_trained": None,
         "sim_ran": False,
+        "training_ran": False,
         "_last_run_hash": None,
+        "_last_training_hash": None,
         # upload byte caches (prevent double-read bug)
         "events_upload_bytes": None,
         "events_upload_name": "",
@@ -140,7 +143,7 @@ _init_state()
 
 
 def _sim_hash() -> str:
-    """Stable string fingerprint of all simulation-relevant session state."""
+    """Stable string fingerprint of main simulation inputs (excludes training)."""
     s = st.session_state
     parts = [
         s.n_days, s.n_providers, s.seed,
@@ -156,7 +159,15 @@ def _sim_hash() -> str:
         # readiness
         s.readiness_model, s.readiness_threshold, s.readiness_half_life,
         s.ebbinghaus_b, s.step_t2, s.step_partial,
-        # training
+    ]
+    return ":".join(str(p) for p in parts)
+
+
+def _training_hash() -> str:
+    """Fingerprint of training-specific inputs on top of the main sim hash."""
+    s = st.session_state
+    parts = [
+        _sim_hash(),
         s.training_program, s.training_interval, s.training_start,
         s.training_effect, s.training_equivalence, s.training_threshold,
     ]
@@ -258,26 +269,6 @@ with st.sidebar:
     st.session_state.readiness_model = "binary"
 
     st.divider()
-    st.subheader("Training program")
-    _sidebar_prog_map = {
-        "None":             "none",
-        "Monthly (28d)":    "monthly",
-        "Bi-monthly (56d)": "bimonthly",
-        "Quarterly (84d)":  "quarterly",
-        "Custom":           "custom",
-        "Targeted":         "targeted",
-    }
-    _sidebar_prog_label = st.selectbox(
-        "Training program",
-        list(_sidebar_prog_map.keys()),
-        index=list(_sidebar_prog_map.values()).index(
-            st.session_state.get("training_program", "none")
-        ),
-        label_visibility="collapsed",
-    )
-    st.session_state.training_program = _sidebar_prog_map[_sidebar_prog_label]
-
-    st.divider()
     run_btn = st.button("▶ Run Simulation", type="primary", use_container_width=True)
     st.divider()
     st.caption("Built by [Sangfroid Labs](https://sangfroidlabs.com)")
@@ -290,18 +281,9 @@ with st.sidebar:
 if st.session_state.sim_ran and st.session_state.sim_baseline is not None:
     if st.session_state._last_run_hash == _sim_hash():
         _sim = st.session_state.sim_baseline
-        _banner_prog = {
-            "none": None,
-            "monthly": "Monthly (every 28 days)",
-            "bimonthly": "Bi-monthly (every 56 days)",
-            "quarterly": "Quarterly (every 84 days)",
-            "custom": f"Custom (every {st.session_state.training_interval} days)",
-            "targeted": "Targeted",
-        }.get(st.session_state.training_program)
-        _banner_suffix = f" · Training: {_banner_prog}" if _banner_prog else ""
         st.success(
             f"✓ {len(_sim.providers):,} providers × {_sim.n_days} days"
-            f"{_banner_suffix} — results in the **Exposure Analysis** tab."
+            " — results in the **Exposure Analysis** tab."
         )
     else:
         st.warning("Settings changed — click **▶ Run Simulation** to update results.")
@@ -345,10 +327,10 @@ with tab_start:
          "exposures for each provider, including the lead-in (day 0 → first exposure) and "
          "trail-out (last exposure → end of window). Adjust the **readiness threshold** to "
          "define the maximum acceptable gap."),
-        ("🏋️ Training Simulation tab", "Select a **training program** in the sidebar (None / Monthly / "
-         "Bi-monthly / Quarterly / Custom / Targeted) before running. The tab shows a comparison "
-         "chart pre-populated with No Training vs. your selected program — add more programs to the "
-         "multiselect to overlay them. Custom and Targeted programs show additional controls here."),
+        ("🏋️ Training Effects tab", "After running the simulation, go to the Training Effects tab. "
+         "Select a **training program** (None / Monthly / Bi-monthly / Quarterly / Custom / Targeted) "
+         "and click **🏋️ Run Training Simulation**. Results include a readiness comparison chart — "
+         "add more programs to the multiselect to overlay them."),
     ]
 
     for i, (label, desc) in enumerate(steps, 1):
@@ -698,6 +680,20 @@ with tab_exposure:
             _pct_t = 100 * (rdf["gap_max"].fillna(9999) > thresh).mean()
             st.info(f"**{_pct_t:.0f}%** of providers exceeded the {thresh}-day critical threshold.")
 
+            # Readiness over time (baseline, no training)
+            st.divider()
+            st.subheader("On-shift readiness over time")
+            st.caption(
+                "This chart shows the proportion of providers who are **currently on shift** "
+                "and within the readiness threshold — meaning they have had a live HALO exposure "
+                f"within the last {thresh} days. Providers who are off-shift are excluded. "
+                "This is the readiness picture produced by live exposure alone, with no training program."
+            )
+            st.plotly_chart(
+                plot_readiness_baseline(sim.proportion_ready_on_shift, sim.n_days),
+                use_container_width=True,
+            )
+
             with st.expander("Individual provider swimlanes (random sample)"):
                 n_swim = st.slider("Providers to display", 10, 80, 30, key="swimlane_n")
                 st.plotly_chart(
@@ -898,185 +894,198 @@ with tab_exposure:
 with tab_training:
     st.header("Training Effects")
 
-    _active_prog = st.session_state.get("training_program", "none")
-    _prog_display_map = {
-        "none":      "None (exposure only)",
-        "monthly":   "Monthly (every 28 days)",
-        "bimonthly": "Bi-monthly (every 56 days)",
-        "quarterly": "Quarterly (every 84 days)",
-        "custom":    "Custom interval",
-        "targeted":  "Targeted",
-    }
-    st.caption(
-        f"Active program: **{_prog_display_map.get(_active_prog, _active_prog)}** "
-        "— change in the sidebar"
-    )
-
-    # Flat conditional controls (only shown when relevant)
-    if _active_prog == "custom":
-        c1, c2 = st.columns(2)
-        with c1:
-            ti = st.slider("Training interval (days)", 7, 365,
-                           st.session_state.training_interval, key="ti_custom")
-            st.session_state.training_interval = ti
-        with c2:
-            ts = st.slider("First training day", 0, 90,
-                           st.session_state.training_start, key="ts_custom")
-            st.session_state.training_start = ts
-
-    if _active_prog == "targeted":
-        c1, c2 = st.columns(2)
-        with c1:
-            targ_thresh = st.slider(
-                "Train providers whose readiness is below (%)",
-                10, 100, int(st.session_state.training_threshold * 100), 5,
-                key="targ_thresh",
-            )
-            st.session_state.training_threshold = targ_thresh / 100.0
-        with c2:
-            ti2 = st.slider("Minimum days between training sessions", 7, 180,
-                            st.session_state.training_interval, key="ti_targeted")
-            st.session_state.training_interval = ti2
-
-    if _active_prog != "none":
-        effect_opts = ["Full reset (training = live exposure)", "Partial boost"]
-        eff = st.radio("Training effectiveness", effect_opts, horizontal=True,
-                       index=0 if st.session_state.training_effect == "full" else 1,
-                       key="train_effect")
-        st.session_state.training_effect = "full" if eff == effect_opts[0] else "partial"
-        if st.session_state.training_effect == "partial":
-            eq = st.slider("Equivalence factor (1.0 = same as live exposure)",
-                           0.1, 1.0, st.session_state.training_equivalence, 0.05,
-                           key="train_eq")
-            st.session_state.training_equivalence = eq
-
-    st.divider()
-
     if not st.session_state.sim_ran:
-        st.info("Configure your training program in the sidebar, then click **▶ Run Simulation**.")
+        st.info("Configure Events and Schedules above, then click **▶ Run Simulation** in the sidebar.")
+        training_btn = False
     else:
         sim_b = st.session_state.sim_baseline
-        sim_t = st.session_state.sim_trained
         if sim_b is None:
             st.error("No simulation results available.")
+            training_btn = False
         else:
-            roll = st.slider("Rolling mean window (days)", 1, 90,
-                             st.session_state.get("_roll_window", 30), key="roll_window")
-            st.session_state["_roll_window"] = roll
-
-            # Summary metrics
-            b_mean = np.nanmean(sim_b.proportion_ready_on_shift) * 100
-            t_mean = (np.nanmean(sim_t.proportion_ready_on_shift) * 100
-                      if sim_t else b_mean)
-            tm = sim_t.training_matrix if sim_t else None
-            n_sessions  = int(tm.any(axis=0).sum()) if tm is not None else 0
-            n_reached   = int(tm.any(axis=1).sum()) if tm is not None else 0
-
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Avg readiness without training", f"{b_mean:.1f}%")
-            c2.metric("Avg readiness with training", f"{t_mean:.1f}%",
-                      delta=f"{t_mean - b_mean:+.1f}%")
-            c3.metric("Training sessions held", f"{n_sessions:,}",
-                      help="Number of distinct days on which at least one provider was trained.")
-            c4.metric("Providers reached", f"{n_reached:,}",
-                      help="Number of unique providers who received at least one training session.")
-
-            st.divider()
-
-            # Comparison chart — primary view
-            _compare_options = {
-                "No training":       "none",
-                "Monthly (28d)":     "monthly",
-                "Bi-monthly (56d)":  "bimonthly",
-                "Quarterly (84d)":   "quarterly",
-                "Custom":            "custom",
-                "Targeted":          "targeted",
+            _prog_display_map = {
+                "None (exposure only)":       "none",
+                "Monthly (every 28 days)":    "monthly",
+                "Bi-monthly (every 56 days)": "bimonthly",
+                "Quarterly (every 84 days)":  "quarterly",
+                "Custom interval":            "custom",
+                "Targeted":                   "targeted",
             }
-            _active_label = {v: k for k, v in _compare_options.items()}.get(_active_prog, "No training")
-            _default_sel = ["No training"] + (
-                [_active_label] if _active_label != "No training" else []
+            _prog_labels = list(_prog_display_map.keys())
+            _current_label = {v: k for k, v in _prog_display_map.items()}.get(
+                st.session_state.training_program, "None (exposure only)"
             )
-
-            # Toggle: use session-state settings vs standardised defaults
-            _use_my_settings = st.toggle(
-                "Use my current Custom/Targeted settings",
-                value=True,
-                key="compare_use_my_settings",
-                help=(
-                    "ON: the Custom and Targeted lines reflect your current interval / "
-                    "threshold settings above.  "
-                    "OFF: all programs use standardised defaults (monthly=28d, "
-                    "bi-monthly=56d, quarterly=84d, custom=28d, targeted=50% threshold) "
-                    "so comparisons are directly apples-to-apples."
-                ),
+            _sel_label = st.selectbox(
+                "Training program",
+                _prog_labels,
+                index=_prog_labels.index(_current_label),
+                key="training_prog_select",
             )
-            if not _use_my_settings:
-                st.caption(
-                    "Standardised mode — all programs use fixed defaults regardless of "
-                    "the controls above."
-                )
+            _sel_prog = _prog_display_map[_sel_label]
+            st.session_state.training_program = _sel_prog
 
-            _selected = st.multiselect(
-                "Programs to compare",
-                list(_compare_options.keys()),
-                default=_default_sel,
-                key="compare_programs",
-            )
+            if _sel_prog == "custom":
+                _tc1, _tc2 = st.columns(2)
+                with _tc1:
+                    _ti = st.slider("Training interval (days)", 7, 365,
+                                    st.session_state.training_interval, key="ti_custom")
+                    st.session_state.training_interval = _ti
+                with _tc2:
+                    _ts = st.slider("First training day", 0, 90,
+                                    st.session_state.training_start, key="ts_custom")
+                    st.session_state.training_start = _ts
 
-            if _selected:
-                _sb = st.session_state.sim_baseline
-                _s = st.session_state
-                _compare_data: dict[str, np.ndarray] = {}
-                for _lbl in _selected:
-                    _prog = _compare_options[_lbl]
-                    _is_active = _use_my_settings and (_prog == _active_prog)
-                    _csim = _run_sim(
-                        _sb.n_days, tuple(_sb.providers), _sb.schedule, _sb.events,
-                        _sb.seed,
-                        _s.readiness_model, _s.readiness_threshold,
-                        _s.readiness_half_life, _s.ebbinghaus_b,
-                        _s.step_t2, _s.step_partial,
-                        _prog,
-                        _s.training_interval    if _is_active else 28,
-                        _s.training_start       if _is_active else 0,
-                        _s.training_effect      if _is_active else "full",
-                        _s.training_equivalence if _is_active else 1.0,
-                        _s.training_threshold   if _is_active else 0.5,
+            elif _sel_prog == "targeted":
+                _tc1, _tc2 = st.columns(2)
+                with _tc1:
+                    _targ_thresh = st.slider(
+                        "Train providers whose readiness is below (%)",
+                        10, 100, int(st.session_state.training_threshold * 100), 5,
+                        key="targ_thresh",
                     )
-                    _compare_data[_lbl] = _csim.proportion_ready_on_shift
-                st.plotly_chart(
-                    plot_training_comparison(_compare_data, _sb.n_days, roll),
-                    use_container_width=True,
+                    st.session_state.training_threshold = _targ_thresh / 100.0
+                with _tc2:
+                    _ti2 = st.slider("Minimum days between training sessions", 7, 180,
+                                     st.session_state.training_interval, key="ti_targeted")
+                    st.session_state.training_interval = _ti2
+
+            if _sel_prog != "none":
+                _effect_opts = ["Full reset (training = live exposure)", "Partial boost"]
+                _eff = st.radio("Training effectiveness", _effect_opts, horizontal=True,
+                                index=0 if st.session_state.training_effect == "full" else 1,
+                                key="train_effect")
+                st.session_state.training_effect = "full" if _eff == _effect_opts[0] else "partial"
+                if st.session_state.training_effect == "partial":
+                    _eq = st.slider("Equivalence factor (1.0 = same as live exposure)",
+                                    0.1, 1.0, st.session_state.training_equivalence, 0.05,
+                                    key="train_eq")
+                    st.session_state.training_equivalence = _eq
+
+            training_btn = st.button("🏋️ Run Training Simulation", type="primary",
+                                     use_container_width=True)
+
+            if st.session_state.training_ran and \
+               st.session_state._last_training_hash != _training_hash():
+                st.warning("Training settings changed — click **🏋️ Run Training Simulation** to update.")
+
+            # ── Results (only after training run) ─────────────────────────
+            if st.session_state.training_ran and st.session_state.sim_trained is not None:
+                sim_t = st.session_state.sim_trained
+                st.divider()
+
+                roll = st.slider("Rolling mean window (days)", 1, 90,
+                                 st.session_state.get("_roll_window", 30), key="roll_window")
+                st.session_state["_roll_window"] = roll
+
+                b_mean = np.nanmean(sim_b.proportion_ready_on_shift) * 100
+                t_mean = np.nanmean(sim_t.proportion_ready_on_shift) * 100
+                tm = sim_t.training_matrix
+                n_sessions = int(tm.any(axis=0).sum())
+                n_reached  = int(tm.any(axis=1).sum())
+
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Avg readiness without training", f"{b_mean:.1f}%")
+                c2.metric("Avg readiness with training", f"{t_mean:.1f}%",
+                          delta=f"{t_mean - b_mean:+.1f}%")
+                c3.metric("Training sessions held", f"{n_sessions:,}",
+                          help="Number of distinct days on which at least one provider was trained.")
+                c4.metric("Providers reached", f"{n_reached:,}",
+                          help="Number of unique providers who received at least one training session.")
+
+                st.divider()
+
+                _compare_options = {
+                    "No training":       "none",
+                    "Monthly (28d)":     "monthly",
+                    "Bi-monthly (56d)":  "bimonthly",
+                    "Quarterly (84d)":   "quarterly",
+                    "Custom":            "custom",
+                    "Targeted":          "targeted",
+                }
+                _active_label = {v: k for k, v in _compare_options.items()}.get(
+                    _sel_prog, "No training"
+                )
+                _default_sel = ["No training"] + (
+                    [_active_label] if _active_label != "No training" else []
                 )
 
-            # Interpretation callout
-            _improve = t_mean - b_mean
-            if abs(_improve) < 1:
-                _t_interp = ("Training had minimal effect on on-shift readiness — "
-                             "live exposure alone may be sufficient at this event rate.")
-            elif _improve > 0:
-                _t_interp = (
-                    f"Training raised average on-shift readiness by **{_improve:.1f} pp** "
-                    f"({b_mean:.0f}% → {t_mean:.0f}%). "
-                    f"{n_sessions:,} training sessions reached {n_reached:,} providers."
+                _use_my_settings = st.toggle(
+                    "Use my current Custom/Targeted settings",
+                    value=True,
+                    key="compare_use_my_settings",
+                    help=(
+                        "ON: the Custom and Targeted lines reflect your current interval / "
+                        "threshold settings above.  "
+                        "OFF: all programs use standardised defaults (monthly=28d, "
+                        "bi-monthly=56d, quarterly=84d, custom=28d, targeted=50% threshold) "
+                        "so comparisons are directly apples-to-apples."
+                    ),
                 )
-            else:
-                _t_interp = (
-                    f"Readiness with training ({t_mean:.0f}%) is similar to baseline "
-                    f"({b_mean:.0f}%). Consider adjusting training frequency or model parameters."
-                )
-            st.info(_t_interp)
+                if not _use_my_settings:
+                    st.caption(
+                        "Standardised mode — all programs use fixed defaults regardless of "
+                        "the controls above."
+                    )
 
-            with st.expander("Also show: all providers (including off-shift)"):
-                fig2 = plot_readiness_timeseries(
-                    sim_b.proportion_ready_all,
-                    sim_t.proportion_ready_all if sim_t else sim_b.proportion_ready_all,
-                    n_days=sim_b.n_days,
-                    rolling_days=roll,
+                _selected = st.multiselect(
+                    "Programs to compare",
+                    list(_compare_options.keys()),
+                    default=_default_sel,
+                    key="compare_programs",
                 )
-                st.caption("⚠️ This includes providers currently off-shift. "
-                           "The on-shift metric above is the primary indicator.")
-                st.plotly_chart(fig2, use_container_width=True)
+
+                if _selected:
+                    _s = st.session_state
+                    _compare_data: dict[str, np.ndarray] = {}
+                    for _lbl in _selected:
+                        _prog = _compare_options[_lbl]
+                        _is_active = _use_my_settings and (_prog == _sel_prog)
+                        _csim = _run_sim(
+                            sim_b.n_days, tuple(sim_b.providers), sim_b.schedule, sim_b.events,
+                            sim_b.seed,
+                            _s.readiness_model, _s.readiness_threshold,
+                            _s.readiness_half_life, _s.ebbinghaus_b,
+                            _s.step_t2, _s.step_partial,
+                            _prog,
+                            _s.training_interval    if _is_active else 28,
+                            _s.training_start       if _is_active else 0,
+                            _s.training_effect      if _is_active else "full",
+                            _s.training_equivalence if _is_active else 1.0,
+                            _s.training_threshold   if _is_active else 0.5,
+                        )
+                        _compare_data[_lbl] = _csim.proportion_ready_on_shift
+                    st.plotly_chart(
+                        plot_training_comparison(_compare_data, sim_b.n_days, roll),
+                        use_container_width=True,
+                    )
+
+                _improve = t_mean - b_mean
+                if abs(_improve) < 1:
+                    _t_interp = ("Training had minimal effect on on-shift readiness — "
+                                 "live exposure alone may be sufficient at this event rate.")
+                elif _improve > 0:
+                    _t_interp = (
+                        f"Training raised average on-shift readiness by **{_improve:.1f} pp** "
+                        f"({b_mean:.0f}% → {t_mean:.0f}%). "
+                        f"{n_sessions:,} training sessions reached {n_reached:,} providers."
+                    )
+                else:
+                    _t_interp = (
+                        f"Readiness with training ({t_mean:.0f}%) is similar to baseline "
+                        f"({b_mean:.0f}%). Consider adjusting training frequency or model parameters."
+                    )
+                st.info(_t_interp)
+
+                with st.expander("Also show: all providers (including off-shift)"):
+                    fig2 = plot_readiness_timeseries(
+                        sim_b.proportion_ready_all,
+                        sim_t.proportion_ready_all,
+                        n_days=sim_b.n_days,
+                        rolling_days=roll,
+                    )
+                    st.caption("⚠️ This includes providers currently off-shift. "
+                               "The on-shift metric above is the primary indicator.")
+                    st.plotly_chart(fig2, use_container_width=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1153,10 +1162,9 @@ if run_btn or st.session_state.get("_auto_run", False):
             st.sidebar.error(e)
         st.stop()
 
-    # 3 & 4. Run simulations (results cached by _run_sim)
-    training_prog = st.session_state.training_program
+    # 3. Run baseline simulation (no training)
     _s = st.session_state
-    _common = dict(
+    sim_b = _run_sim(
         n_days=n_days, providers_tuple=tuple(providers_list),
         schedule=schedule, events_df=events_df, seed=int(seed),
         readiness_model=_s.readiness_model,
@@ -1164,31 +1172,49 @@ if run_btn or st.session_state.get("_auto_run", False):
         readiness_half_life=_s.readiness_half_life,
         ebbinghaus_b=_s.ebbinghaus_b,
         step_t2=_s.step_t2, step_partial=_s.step_partial,
+        training_program="none",
+        training_interval=28,
+        training_start=0,
+        training_effect="full",
+        training_equivalence=1.0,
+        training_threshold=0.5,
+    )
+
+    st.session_state.sim_baseline = sim_b
+    st.session_state.sim_trained = None
+    st.session_state.sim_ran = True
+    st.session_state.training_ran = False
+    st.session_state._last_run_hash = _sim_hash()
+    st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Training simulation (triggered by Run Training button in Training tab)
+# ---------------------------------------------------------------------------
+
+if st.session_state.get("sim_ran") and training_btn:
+    _sb = st.session_state.sim_baseline
+    _s = st.session_state
+    _sim_t = _run_sim(
+        n_days=_sb.n_days,
+        providers_tuple=tuple(_sb.providers),
+        schedule=_sb.schedule,
+        events_df=_sb.events,
+        seed=_sb.seed,
+        readiness_model=_s.readiness_model,
+        readiness_threshold=_s.readiness_threshold,
+        readiness_half_life=_s.readiness_half_life,
+        ebbinghaus_b=_s.ebbinghaus_b,
+        step_t2=_s.step_t2,
+        step_partial=_s.step_partial,
+        training_program=_s.training_program,
         training_interval=_s.training_interval,
         training_start=_s.training_start,
         training_effect=_s.training_effect,
         training_equivalence=_s.training_equivalence,
         training_threshold=_s.training_threshold,
     )
-
-    sim_b = _run_sim(**_common, training_program="none")
-
-    if training_prog != "none":
-        sim_t = _run_sim(**_common, training_program=training_prog)
-    else:
-        sim_t = sim_b
-
-    st.session_state.sim_baseline = sim_b
-    st.session_state.sim_trained = sim_t
-    st.session_state.sim_ran = True
-    st.session_state._last_run_hash = _sim_hash()
-    # Store training label for PDF report
-    _prog_labels = {v: k for k, v in {
-        "None (exposure only)": "none", "Monthly (every 28 days)": "monthly",
-        "Bi-monthly (every 56 days)": "bimonthly", "Quarterly (every 84 days)": "quarterly",
-        "Custom interval": "custom",
-        "Targeted (train undertrained providers only)": "targeted",
-    }.items()}
-    st.session_state["_training_prog_label"] = _prog_labels.get(training_prog, training_prog)
-
+    st.session_state.sim_trained = _sim_t
+    st.session_state.training_ran = True
+    st.session_state._last_training_hash = _training_hash()
     st.rerun()

@@ -75,7 +75,55 @@ def plot_gap_distribution(results_df: pd.DataFrame) -> go.Figure:
 
 
 # ---------------------------------------------------------------------------
-# 2. Threshold sweep — % exceeding X-day gap threshold
+# 2. Baseline readiness timeseries (on-shift providers only)
+# ---------------------------------------------------------------------------
+
+def plot_readiness_baseline(
+    prop_on_shift: np.ndarray,
+    n_days: int,
+    rolling_days: int = 30,
+    start_date: str = "2024-01-01",
+) -> go.Figure:
+    """
+    Readiness over time for on-shift providers with no training program.
+    Shows what the exposure pattern alone produces.
+    """
+    dates = pd.date_range(start_date, periods=n_days, freq="D")
+    smoothed = (
+        pd.Series(prop_on_shift)
+        .rolling(rolling_days, min_periods=1, center=True)
+        .mean()
+        .values * 100
+    )
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=dates,
+        y=smoothed,
+        mode="lines",
+        name="On-shift readiness",
+        line=dict(color=_BLUE, width=2),
+        fill="tozeroy",
+        fillcolor="rgba(37,99,235,0.1)",
+        showlegend=False,
+    ))
+    fig.update_layout(
+        title=f"On-shift readiness over time — exposure only ({rolling_days}-day rolling mean)",
+        xaxis_title="Date",
+        yaxis_title="% ready",
+        yaxis=dict(range=[0, 105]),
+        height=340,
+        margin=dict(t=60, b=40),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+    )
+    fig.update_xaxes(gridcolor="#E2E8F0")
+    fig.update_yaxes(gridcolor="#E2E8F0")
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 3. Threshold sweep — % exceeding X-day gap threshold
 # ---------------------------------------------------------------------------
 
 def plot_threshold_sweep(
