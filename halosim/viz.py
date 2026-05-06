@@ -70,7 +70,7 @@ def plot_gap_distribution(results_df: pd.DataFrame) -> go.Figure:
         plot_bgcolor="white",
         paper_bgcolor="white",
     )
-    fig.update_yaxes(gridcolor="#E2E8F0")
+    fig.update_yaxes(gridcolor="#E2E8F0", rangemode="tozero")
     return fig
 
 
