@@ -19,10 +19,13 @@ import numpy as np
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def compute_training(sim) -> np.ndarray:
+def compute_training(sim, initial_last: np.ndarray | None = None) -> np.ndarray:
     """
     Return training_matrix: (n_providers, n_days) bool.
     True on days when a provider receives a training event.
+
+    initial_last: passed to _targeted_training to seed its readiness state;
+    see readiness._compute_initial_last for format.
     """
     program = sim.training_program
 
@@ -45,7 +48,7 @@ def compute_training(sim) -> np.ndarray:
         )
 
     elif program == "targeted":
-        return _targeted_training(sim)
+        return _targeted_training(sim, initial_last=initial_last)
 
     return np.zeros((sim.n_providers, sim.n_days), dtype=bool)
 
@@ -74,12 +77,15 @@ def _scheduled_training(sim, interval: int, start: int = 0) -> np.ndarray:
 # Targeted (sequential day-loop)
 # ---------------------------------------------------------------------------
 
-def _targeted_training(sim) -> np.ndarray:
+def _targeted_training(sim, initial_last: np.ndarray | None = None) -> np.ndarray:
     """
     Each day: compute readiness for on-shift providers; train those below
     sim.training_target_threshold.  Training budget: once per interval.
 
     This is an agent-based simulation — cannot be vectorized.
+
+    initial_last: (n_providers,) int32 of pre-window last-reset offsets
+    (negative days). When provided, avoids left-censoring bias at day 0.
     """
     from halosim.readiness import _days_since_last_reset
 
@@ -91,7 +97,11 @@ def _targeted_training(sim) -> np.ndarray:
     never = n_days + 1
 
     training = np.zeros((n_providers, n_days), dtype=bool)
-    last_reset = np.full(n_providers, -never, dtype=np.int32)  # "never trained/exposed"
+    # Seed from initial_last if provided; otherwise assume never exposed
+    if initial_last is not None:
+        last_reset = initial_last.copy()
+    else:
+        last_reset = np.full(n_providers, -never, dtype=np.int32)
     next_training_day = start                                   # budget tracker
 
     exposure_matrix = sim.exposure_matrix

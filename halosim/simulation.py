@@ -70,7 +70,7 @@ class Simulation:
         """Execute the full pipeline: exposure → training → readiness → aggregate."""
         from halosim.exposure import compute_exposure
         from halosim.training import compute_training
-        from halosim.readiness import compute_readiness
+        from halosim.readiness import compute_readiness, _compute_initial_last
 
         if not self.is_ready_to_run():
             self.errors.append("Schedule and events must be set before running.")
@@ -82,12 +82,16 @@ class Simulation:
         # 2. exposure
         self.exposure_matrix, self.results_df = compute_exposure(self)
 
-        # 3. training
-        self.training_matrix = compute_training(self)
+        # 3. Estimate pre-window exposure state from each provider's empirical
+        #    rate to avoid left-censoring bias in the readiness timeseries.
+        initial_last = _compute_initial_last(self.exposure_matrix, self.n_days, self.seed)
+
+        # 4. training (targeted program uses initial_last for its own day-loop state)
+        self.training_matrix = compute_training(self, initial_last=initial_last)
         self.combined_matrix = self.exposure_matrix | self.training_matrix
 
-        # 4. readiness
-        self.readiness_matrix = compute_readiness(self)
+        # 5. readiness
+        self.readiness_matrix = compute_readiness(self, initial_last=initial_last)
 
         # 5. aggregate readiness (on-shift providers only — primary metric)
         n_days = self.n_days

@@ -12,8 +12,8 @@ simulation layer shows how training programs affect population readiness over ti
 
 The methodology is based on:
 
-> PMID: 41633464 — *Code Blue Blindspots: Quantifying Nursing Exposure to Cardiac Arrest in a
-> Community Hospital.* Resuscitation, 2026.
+> PMID: 41633464 — *Code Blue blindspots: mapping nursing exposure to cardiac arrests.*
+> Resuscitation. 2026.
 
 ---
 
@@ -143,8 +143,8 @@ event generation and schedule randomisation. Results are identical across runs w
 
 If you use HaloSim in research, please cite:
 
-> PMID: 41633464 — *Code Blue Blindspots: Quantifying Nursing Exposure to Cardiac Arrest in a
-> Community Hospital.* Resuscitation, 2026.  
+> PMID: 41633464 — *Code Blue blindspots: mapping nursing exposure to cardiac arrests.*
+> Resuscitation. 2026.  
 > HaloSim: https://sfl-halosim.streamlit.app/ (https://github.com/EmergencyMind/halosim)
 
 ---

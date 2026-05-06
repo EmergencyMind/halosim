@@ -80,8 +80,9 @@ class _HaloReport(FPDF):
         self.set_text_color(*_MUTED_RGB)
         self.multi_cell(
             0, 4,
-            "Dworkis DA. Code Blue Blindspots: Quantifying Nursing Exposure to Cardiac Arrest "
-            "in a Community Hospital. Resuscitation, 2026. HaloSim: https://sfl-halosim.streamlit.app/",
+            "Walker D et al. Code Blue blindspots: mapping nursing exposure to cardiac arrests. "
+            "Resuscitation. 2026. PMID: 41633464. "
+            "HaloSim: https://sfl-halosim.streamlit.app/",
             align="C",
         )
 

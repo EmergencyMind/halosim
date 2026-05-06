@@ -7,7 +7,7 @@ Simple join (Basic):  provider is exposed on day t if they are on shift AND
 Complex join (Advanced): event is within ±window_hours of any shift boundary;
                          requires 'hour' column in events (upload only).
 
-Per-provider gap statistics match the methodology in Dworkis 2026.
+Per-provider gap statistics match the methodology in PMID: 41633464.
 """
 
 from __future__ import annotations

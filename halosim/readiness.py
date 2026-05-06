@@ -27,12 +27,12 @@ from __future__ import annotations
 import numpy as np
 
 
-def compute_readiness(sim) -> np.ndarray:
+def compute_readiness(sim, initial_last: np.ndarray | None = None) -> np.ndarray:
     """Dispatch to the selected readiness model."""
     model = sim.readiness_model
     combined = sim.combined_matrix   # (n_providers, n_days) bool
 
-    days_since = _days_since_last_reset(combined)   # (n_providers, n_days) int
+    days_since = _days_since_last_reset(combined, initial_last=initial_last)
 
     if model == "binary":
         return _binary(days_since, sim.readiness_threshold_days)
@@ -55,32 +55,68 @@ def compute_readiness(sim) -> np.ndarray:
 # days_since_last_reset (vectorized)
 # ---------------------------------------------------------------------------
 
-def _days_since_last_reset(combined: np.ndarray) -> np.ndarray:
+def _days_since_last_reset(
+    combined: np.ndarray,
+    initial_last: np.ndarray | None = None,
+) -> np.ndarray:
     """
     For each provider i on each day t, compute how many days have elapsed
     since the last True in combined[i, :t+1].  If no reset has occurred,
     value is set to a large number (n_days + 1).
 
-    Uses a vectorized cumulative approach — no Python loops.
+    initial_last: (n_providers,) int32, optional.
+        Days-before-window of each provider's last prior reset, expressed as
+        negative offsets (e.g. -30 means last reset was 30 days before day 0).
+        Providers with no prior history should be set to -(n_days + 1).
+        When None, all providers are assumed to have no prior history (original
+        behaviour, which causes left-censoring bias at the start of the window).
     """
     n_providers, n_days = combined.shape
     never = n_days + 1
 
-    # cumulative index of last True: broadcast trick
-    # For each day t, last_reset[i, t] = max index j ≤ t where combined[i,j] is True
-    # If no such j exists, use -never so days_since = t + never
     last = np.full((n_providers, n_days), -never, dtype=np.int32)
 
-    for t in range(n_days):
-        if t == 0:
-            last[:, 0] = np.where(combined[:, 0], 0, -never)
-        else:
-            reset_today = combined[:, t]
-            last[:, t] = np.where(reset_today, t, last[:, t - 1])
+    # Day 0: use initial_last as the carry-in prior state
+    init_carry = initial_last if initial_last is not None else np.full(n_providers, -never, dtype=np.int32)
+    last[:, 0] = np.where(combined[:, 0], 0, init_carry)
+
+    for t in range(1, n_days):
+        last[:, t] = np.where(combined[:, t], t, last[:, t - 1])
 
     days_since = np.arange(n_days, dtype=np.int32)[np.newaxis, :] - last
     days_since = np.clip(days_since, 0, never)
     return days_since
+
+
+def _compute_initial_last(
+    exposure_matrix: np.ndarray,
+    n_days: int,
+    seed: int,
+) -> np.ndarray:
+    """
+    Estimate each provider's last-exposure day before the window opens, using
+    a geometric draw based on their empirical exposure rate in the window.
+
+    Returns initial_last: (n_providers,) int32.
+    Values are negative offsets from day 0 (e.g. -30 = last exposed 30 days
+    before the window).  Providers with zero exposures get -(n_days + 1).
+    """
+    never = -(n_days + 1)
+    n_providers = exposure_matrix.shape[0]
+    n_events = exposure_matrix.sum(axis=1)          # (n_providers,)
+    exp_rate = n_events / n_days                    # events/day per provider
+
+    rng = np.random.default_rng(seed + 9973)        # offset so warmup differs from main sim
+    initial_last = np.full(n_providers, never, dtype=np.int32)
+
+    active = np.where(exp_rate > 0)[0]
+    for i in active:
+        p = float(exp_rate[i])
+        # Geometric(p): expected gap = 1/p days; models stationary inter-event spacing
+        days_since = int(rng.geometric(p=min(p, 0.999)))
+        initial_last[i] = -days_since               # negative = before window
+
+    return initial_last
 
 
 # ---------------------------------------------------------------------------
