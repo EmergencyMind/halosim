@@ -798,16 +798,20 @@ with tab_exposure:
                 _expected = round(st.session_state.event_rate * sim.n_days)
 
                 ec1, ec2, ec3 = st.columns(3)
-                ec1.metric("Total events (actual)", _n_ev,
-                           delta=f"{_n_ev - _expected:+d} vs expected {_expected}",
-                           delta_color="off")
+                if st.session_state.event_source == "Generate (Poisson MC)":
+                    ec1.metric("Total events (actual)", _n_ev,
+                               delta=f"{_n_ev - _expected:+d} vs expected {_expected}",
+                               delta_color="off")
+                    st.caption(
+                        f"Expected ~{_expected} events over {sim.n_days} days at the configured rate. "
+                        "Actual count varies around this — Poisson sampling is stochastic, so differences "
+                        "of 10–20% are normal. Re-run with a different seed to see the range."
+                    )
+                else:
+                    ec1.metric("Total events (uploaded)", _n_ev)
+                    st.caption(f"{_n_ev} events loaded from uploaded file over {sim.n_days} days.")
                 ec2.metric("Day shift", f"{_n_day_ev}  ({100*_n_day_ev//_n_ev if _n_ev else 0}%)")
                 ec3.metric("Night shift", f"{_n_night_ev}  ({100*_n_night_ev//_n_ev if _n_ev else 0}%)")
-                st.caption(
-                    f"Expected ~{_expected} events over {sim.n_days} days at the configured rate. "
-                    "Actual count varies around this — Poisson sampling is stochastic, so differences "
-                    "of 10–20% are normal. Re-run with a different seed to see the range."
-                )
 
                 _ev2 = _ev.copy()
                 _ev2["month"] = (_ev2["day_idx"] // 30).clip(upper=max(0, sim.n_days // 30 - 1))
@@ -820,7 +824,7 @@ with tab_exposure:
                 import plotly.graph_objects as _go
                 _fig_ev = _go.Figure([
                     _go.Bar(x=_labels, y=_day_counts, name="Day", marker_color="#2563EB", opacity=0.85),
-                    _go.Bar(x=_labels, y=_ngt_counts, name="Night", marker_color="#7C3AED", opacity=0.85),
+                    _go.Bar(x=_labels, y=_ngt_counts, name="Night", marker_color="#F59E0B", opacity=0.85),
                 ])
                 _fig_ev.update_layout(
                     title="Events per month",
@@ -862,7 +866,7 @@ with tab_exposure:
                     z=_enc,
                     x=list(range(1, _show_days + 1)),
                     y=_plabels,
-                    colorscale=[[0, "#F1F5F9"], [0.5, "#7C3AED"], [1.0, "#2563EB"]],
+                    colorscale=[[0, "#F1F5F9"], [0.5, "#F59E0B"], [1.0, "#2563EB"]],
                     showscale=True,
                     colorbar=dict(
                         tickvals=[0.33, 1.0, 1.67],
