@@ -909,7 +909,6 @@ with tab_training:
                 "Bi-monthly (every 56 days)": "bimonthly",
                 "Quarterly (every 84 days)":  "quarterly",
                 "Custom interval":            "custom",
-                "Targeted":                   "targeted",
             }
             _prog_labels = list(_prog_display_map.keys())
             _current_label = {v: k for k, v in _prog_display_map.items()}.get(
@@ -934,20 +933,6 @@ with tab_training:
                     _ts = st.slider("First training day", 0, 90,
                                     st.session_state.training_start, key="ts_custom")
                     st.session_state.training_start = _ts
-
-            elif _sel_prog == "targeted":
-                _tc1, _tc2 = st.columns(2)
-                with _tc1:
-                    _targ_thresh = st.slider(
-                        "Train providers whose readiness is below (%)",
-                        10, 100, int(st.session_state.training_threshold * 100), 5,
-                        key="targ_thresh",
-                    )
-                    st.session_state.training_threshold = _targ_thresh / 100.0
-                with _tc2:
-                    _ti2 = st.slider("Minimum days between training sessions", 7, 180,
-                                     st.session_state.training_interval, key="ti_targeted")
-                    st.session_state.training_interval = _ti2
 
             if _sel_prog != "none":
                 _effect_opts = ["Full reset (training = live exposure)", "Partial boost"]
@@ -1000,7 +985,6 @@ with tab_training:
                     "Bi-monthly (56d)":  "bimonthly",
                     "Quarterly (84d)":   "quarterly",
                     "Custom":            "custom",
-                    "Targeted":          "targeted",
                 }
                 _active_label = {v: k for k, v in _compare_options.items()}.get(
                     _sel_prog, "No training"
