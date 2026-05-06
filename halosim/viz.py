@@ -303,10 +303,12 @@ def plot_training_comparison(
     n_days: int,
     rolling_days: int = 30,
     start_date: str = "2024-01-01",
+    training_days: dict[str, list[int]] | None = None,
 ) -> go.Figure:
     """
     Overlay readiness timeseries for multiple training programs on one chart.
     programs: {label: proportion_ready_on_shift array}
+    training_days: {label: [day_index, ...]} — draws thin vertical tick marks per program
     """
     dates = pd.date_range(start_date, periods=n_days, freq="D")
 
@@ -325,6 +327,24 @@ def plot_training_comparison(
             name=label,
             line=dict(color=color, width=width, dash=dash),
         ))
+
+    # Training day tick marks — thin vertical lines per program
+    if training_days:
+        shapes = []
+        for label, days in training_days.items():
+            color = _PROGRAM_COLORS.get(label, _BLUE)
+            for d in days:
+                if 0 <= d < n_days:
+                    shapes.append(dict(
+                        type="line",
+                        x0=dates[d], x1=dates[d],
+                        y0=0, y1=1,
+                        xref="x", yref="paper",
+                        line=dict(color=color, width=0.8),
+                        opacity=0.25,
+                    ))
+        if shapes:
+            fig.update_layout(shapes=shapes)
 
     fig.update_layout(
         title=f"Training program comparison ({rolling_days}-day rolling mean, on-shift providers)",

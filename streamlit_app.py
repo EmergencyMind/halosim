@@ -962,20 +962,30 @@ with tab_training:
                                  st.session_state.get("_roll_window", 30), key="roll_window")
                 st.session_state["_roll_window"] = roll
 
-                b_mean = np.nanmean(sim_b.proportion_ready_on_shift) * 100
-                t_mean = np.nanmean(sim_t.proportion_ready_on_shift) * 100
+                b_mean = np.nanmedian(sim_b.proportion_ready_on_shift) * 100
+                t_mean = np.nanmedian(sim_t.proportion_ready_on_shift) * 100
+                days_below_b = int((sim_b.proportion_ready_on_shift < 0.80).sum())
+                days_below_t = int((sim_t.proportion_ready_on_shift < 0.80).sum())
                 tm = sim_t.training_matrix
                 n_sessions = int(tm.any(axis=0).sum())
                 n_reached  = int(tm.any(axis=1).sum())
 
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Avg readiness without training", f"{b_mean:.1f}%")
-                c2.metric("Avg readiness with training", f"{t_mean:.1f}%",
-                          delta=f"{t_mean - b_mean:+.1f}%")
-                c3.metric("Training sessions held", f"{n_sessions:,}",
-                          help="Number of distinct days on which at least one provider was trained.")
-                c4.metric("Providers reached", f"{n_reached:,}",
-                          help="Number of unique providers who received at least one training session.")
+                c1.metric("Median on-shift readiness — no training", f"{b_mean:.1f}%")
+                c2.metric("Median on-shift readiness — with training", f"{t_mean:.1f}%",
+                          delta=f"{t_mean - b_mean:+.1f} pp")
+                c3.metric("Days readiness <80% — no training", f"{days_below_b}",
+                          help="Days where >20% of on-shift providers exceeded the gap threshold.")
+                c4.metric("Days readiness <80% — with training", f"{days_below_t}",
+                          delta=f"{days_below_t - days_below_b:+d} days",
+                          delta_color="inverse",
+                          help="Days where >20% of on-shift providers exceeded the gap threshold.")
+
+                _c5, _c6, _, _ = st.columns(4)
+                _c5.metric("Training sessions held", f"{n_sessions:,}",
+                           help="Number of distinct days on which at least one provider was trained.")
+                _c6.metric("Providers reached", f"{n_reached:,}",
+                           help="Number of unique providers who received at least one training session.")
 
                 st.divider()
 
@@ -1021,9 +1031,13 @@ with tab_training:
                 if _selected:
                     _s = st.session_state
                     _compare_data: dict[str, np.ndarray] = {}
+                    _training_days: dict[str, list[int]] = {}
+                    _std_intervals = {"monthly": 28, "bimonthly": 56, "quarterly": 84, "custom": 28}
                     for _lbl in _selected:
                         _prog = _compare_options[_lbl]
                         _is_active = _use_my_settings and (_prog == _sel_prog)
+                        _interval = (_s.training_interval if _is_active else _std_intervals.get(_prog, 28))
+                        _start    = (_s.training_start   if _is_active else 0)
                         _csim = _run_sim(
                             sim_b.n_days, tuple(sim_b.providers), sim_b.schedule, sim_b.events,
                             sim_b.seed,
@@ -1031,31 +1045,39 @@ with tab_training:
                             _s.readiness_half_life, _s.ebbinghaus_b,
                             _s.step_t2, _s.step_partial,
                             _prog,
-                            _s.training_interval    if _is_active else 28,
-                            _s.training_start       if _is_active else 0,
+                            _interval,
+                            _start,
                             _s.training_effect      if _is_active else "full",
                             _s.training_equivalence if _is_active else 1.0,
                             _s.training_threshold   if _is_active else 0.5,
                         )
                         _compare_data[_lbl] = _csim.proportion_ready_on_shift
+                        if _prog != "none":
+                            _training_days[_lbl] = list(
+                                np.arange(_start, sim_b.n_days, _interval, dtype=int)
+                            )
                     st.plotly_chart(
-                        plot_training_comparison(_compare_data, sim_b.n_days, roll),
+                        plot_training_comparison(
+                            _compare_data, sim_b.n_days, roll,
+                            training_days=_training_days,
+                        ),
                         use_container_width=True,
                     )
 
                 _improve = t_mean - b_mean
                 if abs(_improve) < 1:
-                    _t_interp = ("Training had minimal effect on on-shift readiness — "
+                    _t_interp = ("Training had minimal effect on median on-shift readiness — "
                                  "live exposure alone may be sufficient at this event rate.")
                 elif _improve > 0:
                     _t_interp = (
-                        f"Training raised average on-shift readiness by **{_improve:.1f} pp** "
-                        f"({b_mean:.0f}% → {t_mean:.0f}%). "
-                        f"{n_sessions:,} training sessions reached {n_reached:,} providers."
+                        f"Training raised median on-shift readiness by **{_improve:.1f} pp** "
+                        f"({b_mean:.0f}% → {t_mean:.0f}%) and reduced days below 80% from "
+                        f"**{days_below_b}** to **{days_below_t}**. "
+                        f"{n_sessions:,} sessions reached {n_reached:,} providers."
                     )
                 else:
                     _t_interp = (
-                        f"Readiness with training ({t_mean:.0f}%) is similar to baseline "
+                        f"Median readiness with training ({t_mean:.0f}%) is similar to baseline "
                         f"({b_mean:.0f}%). Consider adjusting training frequency or model parameters."
                     )
                 st.info(_t_interp)
