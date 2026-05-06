@@ -974,7 +974,9 @@ with tab_training:
             c1.metric("Avg readiness without training", f"{b_mean:.1f}%")
             c2.metric("Avg readiness with training", f"{t_mean:.1f}%",
                       delta=f"{t_mean - b_mean:+.1f}%")
-            c3.metric("Total training events delivered", f"{n_train:,}")
+            c3.metric("Provider-training sessions", f"{n_train:,}",
+                      help="Total number of individual provider training sessions delivered "
+                           "(provider × training day). One session = one provider trained on one day.")
 
             st.divider()
 
