@@ -823,8 +823,8 @@ with tab_exposure:
                 _ngt_counts = [int(_monthly_ngt.set_index("month")["count"].get(m, 0)) for m in _all_months]
                 import plotly.graph_objects as _go
                 _fig_ev = _go.Figure([
-                    _go.Bar(x=_labels, y=_day_counts, name="Day", marker_color="#2563EB", opacity=0.85),
-                    _go.Bar(x=_labels, y=_ngt_counts, name="Night", marker_color="#F59E0B", opacity=0.85),
+                    _go.Bar(x=_labels, y=_day_counts, name="Day", marker_color="#F59E0B", opacity=0.85),
+                    _go.Bar(x=_labels, y=_ngt_counts, name="Night", marker_color="#2563EB", opacity=0.85),
                 ])
                 _fig_ev.update_layout(
                     title="Events per month",
@@ -866,7 +866,7 @@ with tab_exposure:
                     z=_enc,
                     x=list(range(1, _show_days + 1)),
                     y=_plabels,
-                    colorscale=[[0, "#F1F5F9"], [0.5, "#F59E0B"], [1.0, "#2563EB"]],
+                    colorscale=[[0, "#F1F5F9"], [0.5, "#2563EB"], [1.0, "#F59E0B"]],
                     showscale=True,
                     colorbar=dict(
                         tickvals=[0.33, 1.0, 1.67],
