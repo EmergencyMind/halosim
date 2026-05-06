@@ -968,15 +968,18 @@ with tab_training:
             b_mean = np.nanmean(sim_b.proportion_ready_on_shift) * 100
             t_mean = (np.nanmean(sim_t.proportion_ready_on_shift) * 100
                       if sim_t else b_mean)
-            n_train = int(sim_t.training_matrix.sum()) if sim_t else 0
+            tm = sim_t.training_matrix if sim_t else None
+            n_sessions  = int(tm.any(axis=0).sum()) if tm is not None else 0
+            n_reached   = int(tm.any(axis=1).sum()) if tm is not None else 0
 
-            c1, c2, c3 = st.columns(3)
+            c1, c2, c3, c4 = st.columns(4)
             c1.metric("Avg readiness without training", f"{b_mean:.1f}%")
             c2.metric("Avg readiness with training", f"{t_mean:.1f}%",
                       delta=f"{t_mean - b_mean:+.1f}%")
-            c3.metric("Provider-training sessions", f"{n_train:,}",
-                      help="Total number of individual provider training sessions delivered "
-                           "(provider × training day). One session = one provider trained on one day.")
+            c3.metric("Training sessions held", f"{n_sessions:,}",
+                      help="Number of distinct days on which at least one provider was trained.")
+            c4.metric("Providers reached", f"{n_reached:,}",
+                      help="Number of unique providers who received at least one training session.")
 
             st.divider()
 
@@ -1055,7 +1058,7 @@ with tab_training:
                 _t_interp = (
                     f"Training raised average on-shift readiness by **{_improve:.1f} pp** "
                     f"({b_mean:.0f}% → {t_mean:.0f}%). "
-                    f"{n_train:,} training events were delivered across the simulation window."
+                    f"{n_sessions:,} training sessions reached {n_reached:,} providers."
                 )
             else:
                 _t_interp = (

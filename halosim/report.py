@@ -272,15 +272,16 @@ def generate_pdf(
 
         b_mean = float(np.nanmean(sim_b.proportion_ready_on_shift) * 100)
         t_mean = float(np.nanmean(sim_t.proportion_ready_on_shift) * 100)
-        n_train = int(sim_t.training_matrix.sum())
+        n_sessions = int(sim_t.training_matrix.any(axis=0).sum())
+        n_reached  = int(sim_t.training_matrix.any(axis=1).sum())
 
-        box_w2 = 55.5
+        box_w2 = 41.5
         y1 = pdf.get_y()
-        pdf.metric_box(18,           y1, box_w2, "Avg readiness  -  no training", f"{b_mean:.1f}%")
-        pdf.metric_box(18 + box_w2 + 2, y1, box_w2, "Avg readiness  -  with training",
+        pdf.metric_box(18,                    y1, box_w2, "Avg readiness  -  no training", f"{b_mean:.1f}%")
+        pdf.metric_box(18 + (box_w2+2),       y1, box_w2, "Avg readiness  -  with training",
                        f"{t_mean:.1f}%", delta=f"{t_mean - b_mean:+.1f} pp")
-        pdf.metric_box(18 + (box_w2 + 2) * 2, y1, box_w2, "Training events delivered",
-                       f"{n_train:,}")
+        pdf.metric_box(18 + (box_w2+2)*2,     y1, box_w2, "Training sessions held", f"{n_sessions:,}")
+        pdf.metric_box(18 + (box_w2+2)*3,     y1, box_w2, "Providers reached", f"{n_reached:,}")
         pdf.set_y(y1 + 22)
         pdf.ln(4)
 
