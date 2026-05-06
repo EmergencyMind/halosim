@@ -287,9 +287,9 @@ def plot_individual_swimlanes(
 
 _PROGRAM_COLORS = {
     "No training":       _GREY,
-    "Monthly (28d)":     _GREEN,
-    "Bi-monthly (56d)":  _BLUE,
-    "Quarterly (84d)":   _ORANGE,
+    "Monthly (30d)":     _GREEN,
+    "Bi-monthly (60d)":  _BLUE,
+    "Quarterly (91d)":   _ORANGE,
     "Custom":            "#7C3AED",
     "Targeted":          "#0891B2",
 }

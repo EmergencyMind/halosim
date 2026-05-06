@@ -33,7 +33,7 @@ def compute_training(sim, initial_last: np.ndarray | None = None) -> np.ndarray:
         return np.zeros((sim.n_providers, sim.n_days), dtype=bool)
 
     elif program in ("monthly", "bimonthly", "quarterly"):
-        intervals = {"monthly": 28, "bimonthly": 56, "quarterly": 84}
+        intervals = {"monthly": 30, "bimonthly": 60, "quarterly": 91}
         return _scheduled_training(
             sim,
             interval=intervals[program],

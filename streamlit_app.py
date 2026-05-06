@@ -112,8 +112,8 @@ def _init_state():
         "step_t2": 180,
         # training
         "training_program": "none",
-        "training_interval": 28,
-        "training_start": 0,
+        "training_interval": 30,
+        "training_start": 14,
         "training_effect": "full",
         "training_equivalence": 1.0,
         "training_threshold": 0.5,
@@ -905,9 +905,9 @@ with tab_training:
         else:
             _prog_display_map = {
                 "None (exposure only)":       "none",
-                "Monthly (every 28 days)":    "monthly",
-                "Bi-monthly (every 56 days)": "bimonthly",
-                "Quarterly (every 84 days)":  "quarterly",
+                "Monthly (every 30 days)":    "monthly",
+                "Bi-monthly (every 60 days)": "bimonthly",
+                "Quarterly (every 91 days)":  "quarterly",
                 "Custom interval":            "custom",
             }
             _prog_labels = list(_prog_display_map.keys())
@@ -991,9 +991,9 @@ with tab_training:
 
                 _compare_options = {
                     "No training":       "none",
-                    "Monthly (28d)":     "monthly",
-                    "Bi-monthly (56d)":  "bimonthly",
-                    "Quarterly (84d)":   "quarterly",
+                    "Monthly (30d)":     "monthly",
+                    "Bi-monthly (60d)":  "bimonthly",
+                    "Quarterly (91d)":   "quarterly",
                     "Custom":            "custom",
                 }
                 _active_label = {v: k for k, v in _compare_options.items()}.get(
@@ -1010,8 +1010,8 @@ with tab_training:
                     help=(
                         "ON: the Custom and Targeted lines reflect your current interval / "
                         "threshold settings above.  "
-                        "OFF: all programs use standardised defaults (monthly=28d, "
-                        "bi-monthly=56d, quarterly=84d, custom=28d, targeted=50% threshold) "
+                        "OFF: all programs use standardised defaults (monthly=30d, "
+                        "bi-monthly=60d, quarterly=91d, custom=30d) "
                         "so comparisons are directly apples-to-apples."
                     ),
                 )
@@ -1032,7 +1032,7 @@ with tab_training:
                     _s = st.session_state
                     _compare_data: dict[str, np.ndarray] = {}
                     _training_days: dict[str, list[int]] = {}
-                    _std_intervals = {"monthly": 28, "bimonthly": 56, "quarterly": 84, "custom": 28}
+                    _std_intervals = {"monthly": 30, "bimonthly": 60, "quarterly": 91, "custom": 30}
                     for _lbl in _selected:
                         _prog = _compare_options[_lbl]
                         _is_active = _use_my_settings and (_prog == _sel_prog)
