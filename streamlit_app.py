@@ -950,10 +950,6 @@ with tab_training:
                            key="train_eq")
             st.session_state.training_equivalence = eq
 
-    roll = st.slider("Rolling mean window (days)", 1, 90,
-                     st.session_state.get("_roll_window", 30), key="roll_window")
-    st.session_state["_roll_window"] = roll
-
     st.divider()
 
     if not st.session_state.sim_ran:
@@ -964,6 +960,10 @@ with tab_training:
         if sim_b is None:
             st.error("No simulation results available.")
         else:
+            roll = st.slider("Rolling mean window (days)", 1, 90,
+                             st.session_state.get("_roll_window", 30), key="roll_window")
+            st.session_state["_roll_window"] = roll
+
             # Summary metrics
             b_mean = np.nanmean(sim_b.proportion_ready_on_shift) * 100
             t_mean = (np.nanmean(sim_t.proportion_ready_on_shift) * 100
