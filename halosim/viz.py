@@ -583,3 +583,67 @@ def build_mc_summary_df(mc_result: dict) -> pd.DataFrame:
         })
 
     return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# 10. MC threshold sweep
+# ---------------------------------------------------------------------------
+
+def plot_mc_threshold_sweep(
+    pct_by_threshold: np.ndarray,  # (n_samples, n_thresholds)
+    thresholds: np.ndarray,
+    threshold_marker: int | None = None,
+    p_low: int = 10,
+    p_high: int = 90,
+) -> go.Figure:
+    """
+    Ribbon chart: for each threshold (x), % providers with max gap > threshold (y).
+    Band = p_low–p_high across MC runs; solid line = median.
+    """
+    n_samples = pct_by_threshold.shape[0]
+    lo  = np.percentile(pct_by_threshold, p_low,  axis=0)
+    hi  = np.percentile(pct_by_threshold, p_high, axis=0)
+    med = np.percentile(pct_by_threshold, 50,     axis=0)
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=np.concatenate([thresholds, thresholds[::-1]]),
+        y=np.concatenate([hi, lo[::-1]]),
+        fill="toself",
+        fillcolor="rgba(37,99,235,0.12)",
+        line=dict(color="rgba(0,0,0,0)"),
+        name=f"p{p_low}–p{p_high}",
+        hoverinfo="skip",
+        showlegend=True,
+    ))
+    fig.add_trace(go.Scatter(
+        x=thresholds, y=med,
+        mode="lines",
+        name="Median",
+        line=dict(color=_BLUE, width=2),
+    ))
+
+    if threshold_marker is not None:
+        fig.add_vline(
+            x=threshold_marker,
+            line_dash="dash", line_color=_ORANGE, line_width=1.5,
+            annotation_text=f"Selected threshold: {threshold_marker}d",
+            annotation_position="top right",
+        )
+
+    title_suffix = f"{n_samples} simulation{'s' if n_samples != 1 else ''}"
+    fig.update_layout(
+        title=f"% providers under-exposed vs. threshold ({title_suffix})",
+        xaxis_title="Maximum acceptable gap (days)",
+        yaxis_title="% providers exceeding gap",
+        yaxis=dict(range=[0, 105]),
+        height=380,
+        legend=dict(x=0.65, y=0.95),
+        margin=dict(t=60, b=40),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+    )
+    fig.update_xaxes(gridcolor="#E2E8F0")
+    fig.update_yaxes(gridcolor="#E2E8F0")
+    return fig

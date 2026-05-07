@@ -21,13 +21,10 @@ from halosim.schedules import (
 )
 from halosim.simulation import Simulation
 from halosim.viz import (
-    plot_exposure_count_histogram,
-    plot_gap_distribution,
-    plot_readiness_baseline,
-    plot_threshold_sweep,
     plot_training_comparison,
     plot_mc_readiness_band,
     plot_mc_histogram,
+    plot_mc_threshold_sweep,
     build_mc_summary_df,
 )
 
@@ -200,11 +197,13 @@ def _run_mc(
     )
 
     readiness_b_list, readiness_t_list, lift_list = [], [], []
-    pct_exc_list, med_gap_list, med_nev_list = [], [], []
+    pct_exc_list, med_gap_list, med_nev_list, pct_by_thr_list = [], [], [], []
     ref = {}
+    _sweep_thresholds = np.arange(7, 366)
+    seeds = np.random.default_rng(base_seed).integers(1000, 10001, n_samples)
 
     for s in range(n_samples):
-        cur = base_seed + s
+        cur = int(seeds[s])
 
         # Events
         if fixed_events_df is None:
@@ -258,6 +257,10 @@ def _run_mc(
         pct_exc_list.append(100.0 * sim_b.results_df["max_gap_exceeds_threshold"].mean())
         med_gap_list.append(float(sim_b.results_df["gap_median"].dropna().median()))
         med_nev_list.append(float(sim_b.results_df["n_events"].dropna().median()))
+        _gap_max = sim_b.results_df["gap_max"].fillna(9999).values
+        pct_by_thr_list.append(
+            np.array([100.0 * (_gap_max > t).mean() for t in _sweep_thresholds])
+        )
 
         if sim_t is not None:
             readiness_t_list.append(sim_t.proportion_ready_on_shift.copy())
@@ -287,7 +290,10 @@ def _run_mc(
         "n_samples":       n_samples,
         "threshold":       readiness_threshold,
         "training_program": training_program,
-        "providers":       list(providers_tuple),
+        "providers":          list(providers_tuple),
+        "seeds":              seeds.tolist(),
+        "pct_by_threshold":   np.array(pct_by_thr_list),
+        "sweep_thresholds":   _sweep_thresholds,
         **{f"ref_{k}": v for k, v in ref.items()},
     }
 
@@ -305,21 +311,6 @@ with st.sidebar:
         st.caption("HALO Event Exposure\n& Training Simulation")
 
     st.divider()
-
-    _n_samp = st.slider(
-        "MC runs (N)",
-        min_value=1, max_value=200,
-        value=st.session_state.mc_n_samples,
-        help="Each run re-draws event timing and shift assignments from a different seed. "
-             "N=1 gives a single deterministic result.",
-    )
-    st.session_state.mc_n_samples = _n_samp
-    if _n_samp == 1:
-        st.caption("N=1 — single seed, no distribution.")
-    elif _n_samp > 100:
-        st.caption(f"N={_n_samp} — may take 30–60 s for large configs.")
-    else:
-        st.caption(f"N={_n_samp} seeds.")
 
     run_btn = st.button("▶ Run Simulation", type="primary", use_container_width=True)
 
@@ -367,7 +358,7 @@ with tab_params:
 
     with _p1:
         n_days = st.selectbox(
-            "Window",
+            "Duration",
             [90, 180, 365, 730],
             index=[90, 180, 365, 730].index(st.session_state.n_days)
             if st.session_state.n_days in [90, 180, 365, 730] else 2,
@@ -383,7 +374,7 @@ with tab_params:
         )
         thresh = int(thresh)
         if thresh > n_days:
-            st.error(f"Threshold ({thresh} d) exceeds window ({n_days} d).")
+            st.error(f"Threshold ({thresh} d) exceeds duration ({n_days} d).")
             thresh = st.session_state.readiness_threshold
         st.session_state.readiness_threshold = thresh
         st.session_state.readiness_model = "binary"
@@ -398,10 +389,20 @@ with tab_params:
         if n_providers > WARN_PROVIDERS:
             st.warning(f"⚠️ {n_providers:,} providers — may be slow.")
 
+        _n_samp = st.slider(
+            "Number of simulations",
+            min_value=1, max_value=200,
+            value=st.session_state.mc_n_samples,
+            help="Each simulation draws independent random seeds for event timing and "
+                 "shift assignments. N=1 gives a single result; N≥50 gives distributions.",
+        )
+        st.session_state.mc_n_samples = _n_samp
+
+    with st.expander("Advanced"):
         seed = int(st.number_input(
-            "Random seed", min_value=0, max_value=99999,
+            "Master seed", min_value=0, max_value=99999,
             value=st.session_state.seed,
-            help="MC runs use seed, seed+1, seed+2, …",
+            help="Determines which random seeds are drawn for each simulation run.",
         ))
         st.session_state.seed = seed
 
@@ -714,23 +715,21 @@ with tab_exposure:
                 use_container_width=True,
             )
 
-        # Reference-run detail
+        # MC threshold sweep
         st.divider()
-        st.subheader("Within-run detail (reference run, seed 0)")
+        st.subheader("Gap exceedance by threshold")
         st.caption(
-            "These charts show the within-population structure for one realisation. "
-            "The distributions above show how these summary values vary across runs."
+            "Each threshold on the x-axis represents the maximum allowed gap between HALO "
+            "exposures. The band shows how the % of under-exposed providers varies across "
+            "all simulation runs. Solid line = median; shaded = p10–p90."
         )
-        st.plotly_chart(plot_exposure_count_histogram(rdf), use_container_width=True)
-        st.plotly_chart(plot_gap_distribution(rdf), use_container_width=True)
-        st.plotly_chart(plot_threshold_sweep(rdf, threshold=thresh), use_container_width=True)
-
-        _pct_ref = 100 * (rdf["gap_max"].fillna(9999) > thresh).mean()
-        st.info(
-            f"Reference run: **{_pct_ref:.0f}%** exceeded the threshold. "
-            f"Across {n_samp} runs: median {np.median(_pct):.0f}% "
-            f"(p10–p90: {np.percentile(_pct,10):.0f}–{np.percentile(_pct,90):.0f}%)."
-        )
+        if "pct_by_threshold" in mc:
+            st.plotly_chart(
+                plot_mc_threshold_sweep(
+                    mc["pct_by_threshold"], mc["sweep_thresholds"], threshold_marker=thresh,
+                ),
+                use_container_width=True,
+            )
 
         # Downloads
         st.divider()
@@ -758,7 +757,8 @@ with tab_exposure:
             )
         with _d3:
             _mc_dl = pd.DataFrame({
-                "seed":                   [int(seed) + s for s in range(n_samp)],
+                "run":                     list(range(1, n_samp + 1)),
+                "seed":                    mc["seeds"],
                 "pct_exceeding_threshold": mc["pct_exceeding"].round(2),
                 "median_gap_days":         mc["median_gap"].round(1),
                 "median_n_events":         mc["median_n_events"].round(1),
