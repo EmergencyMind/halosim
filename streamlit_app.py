@@ -665,15 +665,15 @@ with tab_exposure:
             "Shaded band = p10–p90 across all runs. Solid line = median. "
             "Off-shift providers excluded."
         )
-        with st.expander("Chart options"):
-            _roll_e = st.slider("Rolling mean (days)", 1, 90,
-                                st.session_state.get("_roll_e", 30), key="roll_e")
-            st.session_state["_roll_e"] = _roll_e
         st.plotly_chart(
             plot_mc_readiness_band(mc["readiness_b"],
                                    rolling_days=st.session_state.get("_roll_e", 30)),
             use_container_width=True,
         )
+        with st.expander("Chart options"):
+            _roll_e = st.slider("Rolling mean (days)", 1, 90,
+                                st.session_state.get("_roll_e", 30), key="roll_e")
+            st.session_state["_roll_e"] = _roll_e
 
         # Summary table
         st.divider()

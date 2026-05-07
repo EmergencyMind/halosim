@@ -481,12 +481,18 @@ def plot_mc_readiness_band(
             line=dict(color=_GREEN, width=2),
         ))
 
+    y_min = float(np.nanmin(lo_b))
+    y_max = float(np.nanmax(hi_b if readiness_t is None else np.maximum(hi_b, hi_t)))
+    pad = max((y_max - y_min) * 0.08, 2.0)
+    y_lo = max(0.0, y_min - pad)
+    y_hi = min(100.0, y_max + pad)
+
     title_suffix = f"{n_samples} MC run{'s' if n_samples != 1 else ''}"
     fig.update_layout(
         title=f"On-shift readiness — {rolling_days}-day rolling mean ({title_suffix})",
         xaxis_title="Date",
         yaxis_title="% ready",
-        yaxis=dict(range=[0, 105]),
+        yaxis=dict(range=[y_lo, y_hi]),
         height=420,
         legend=dict(x=0.01, y=0.05),
         margin=dict(t=60, b=40),
