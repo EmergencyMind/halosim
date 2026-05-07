@@ -186,9 +186,10 @@ def _run_mc(
     readiness_model, readiness_threshold,
     training_program, training_interval, training_start,
     training_effect, training_equivalence,
-    n_samples, base_seed,
+    seeds_tuple,
 ) -> dict:
     n_providers = len(providers_tuple)
+    n_samples   = len(seeds_tuple)
     _weights = (
         {"d": schedule_day_pct / 100,
          "n": schedule_night_pct / 100,
@@ -200,10 +201,8 @@ def _run_mc(
     pct_exc_list, med_gap_list, med_nev_list, pct_by_thr_list = [], [], [], []
     ref = {}
     _sweep_thresholds = np.arange(7, 366)
-    seeds = np.random.default_rng(base_seed).integers(1000, 10001, n_samples)
 
-    for s in range(n_samples):
-        cur = int(seeds[s])
+    for s, cur in enumerate(seeds_tuple):
 
         # Events
         if fixed_events_df is None:
@@ -291,7 +290,7 @@ def _run_mc(
         "threshold":       readiness_threshold,
         "training_program": training_program,
         "providers":          list(providers_tuple),
-        "seeds":              seeds.tolist(),
+        "seeds":              list(seeds_tuple),
         "pct_by_threshold":   np.array(pct_by_thr_list),
         "sweep_thresholds":   _sweep_thresholds,
         **{f"ref_{k}": v for k, v in ref.items()},
@@ -398,13 +397,6 @@ with tab_params:
         )
         st.session_state.mc_n_samples = _n_samp
 
-    with st.expander("Advanced"):
-        seed = int(st.number_input(
-            "Master seed", min_value=0, max_value=99999,
-            value=st.session_state.seed,
-            help="Determines which random seeds are drawn for each simulation run.",
-        ))
-        st.session_state.seed = seed
 
     # ── HALO Events ─────────────────────────────────────────────────────────
     st.divider()
@@ -993,6 +985,8 @@ if run_btn or st.session_state.get("_auto_run", False):
 
     _training_interval = _PROG_INTERVALS.get(_s.training_program, 30)
 
+    _fresh_seeds = tuple(int(x) for x in np.random.randint(1000, 10001, _s.mc_n_samples))
+
     with st.spinner(f"Running {_s.mc_n_samples} simulation{'s' if _s.mc_n_samples != 1 else ''}…"):
         _mc = _run_mc(
             n_days=_s.n_days,
@@ -1013,8 +1007,7 @@ if run_btn or st.session_state.get("_auto_run", False):
             training_start=_TRAINING_START,
             training_effect=_s.training_effect,
             training_equivalence=_s.training_equivalence,
-            n_samples=_s.mc_n_samples,
-            base_seed=_s.seed,
+            seeds_tuple=_fresh_seeds,
         )
 
     st.session_state.mc_result = _mc
