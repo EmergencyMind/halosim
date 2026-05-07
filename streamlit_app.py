@@ -156,6 +156,25 @@ def _mc_hash() -> str:
 
 
 
+def _effective_gap_max(exposure_matrix: np.ndarray, training_matrix: np.ndarray, n_days: int) -> np.ndarray:
+    """Per-provider max gap between any resetting event (HALO exposure OR training session)."""
+    reset = exposure_matrix | training_matrix  # (n_providers, n_days)
+    n_p = reset.shape[0]
+    result = np.empty(n_p, dtype=float)
+    for p in range(n_p):
+        days = np.where(reset[p])[0]
+        if len(days) == 0:
+            result[p] = float(n_days)
+        else:
+            gaps = np.diff(days).tolist()
+            if days[0] > 0:
+                gaps.append(int(days[0]))
+            if days[-1] < n_days - 1:
+                gaps.append(int(n_days - 1 - days[-1]))
+            result[p] = float(max(gaps)) if gaps else 0.0
+    return result
+
+
 def _run_mc(
     n_days, providers_tuple, fixed_schedule, fixed_events_df,
     event_source, event_rate, event_day_pct,
@@ -245,9 +264,11 @@ def _run_mc(
                 (np.nanmean(sim_t.proportion_ready_on_shift)
                  - np.nanmean(sim_b.proportion_ready_on_shift)) * 100
             )
-            _gap_max_t = sim_t.results_df["gap_max"].fillna(9999).values
+            _eff_gap = _effective_gap_max(
+                sim_t.exposure_matrix, sim_t.training_matrix, n_days
+            )
             pct_by_thr_t_list.append(
-                np.array([100.0 * (_gap_max_t > t).mean() for t in _sweep_thresholds])
+                np.array([100.0 * (_eff_gap > t).mean() for t in _sweep_thresholds])
             )
 
         if s == 0:
@@ -783,11 +804,10 @@ with tab_training:
 
             # Gap threshold sweep — baseline vs trained
             st.divider()
-            st.subheader("Providers with gap > threshold")
+            st.subheader("Providers with effective gap > threshold")
             st.caption(
-                "For each gap duration on the x-axis, the curve shows the % of providers whose "
-                "maximum gap between HALO exposures exceeds that value. "
-                "Blue = exposure only · Green = with training. "
+                "Blue = maximum gap between HALO exposures only (same as Exposure tab). "
+                "Green = maximum effective gap, counting HALO exposures and training sessions as resets. "
                 "Solid line = median; shaded = p10–p90 across all runs."
             )
             st.plotly_chart(
