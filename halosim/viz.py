@@ -599,14 +599,22 @@ def plot_mc_threshold_sweep(
     """
     Ribbon chart: for each threshold (x), % providers with max gap > threshold (y).
     Band = p_low–p_high across MC runs; solid line = median.
+    Labels the x-values where the median curve crosses 90%, 50%, and 10%.
     """
     n_samples = pct_by_threshold.shape[0]
     lo  = np.percentile(pct_by_threshold, p_low,  axis=0)
     hi  = np.percentile(pct_by_threshold, p_high, axis=0)
     med = np.percentile(pct_by_threshold, 50,     axis=0)
 
+    def _x_at_y(y_target: float) -> float | None:
+        """Find the x-value (threshold) where the median curve first crosses y_target."""
+        if med[0] < y_target or med[-1] > y_target:
+            return None
+        return float(np.interp(y_target, med[::-1], thresholds[::-1]))
+
     fig = go.Figure()
 
+    # Ribbon
     fig.add_trace(go.Scatter(
         x=np.concatenate([thresholds, thresholds[::-1]]),
         y=np.concatenate([hi, lo[::-1]]),
@@ -617,6 +625,8 @@ def plot_mc_threshold_sweep(
         hoverinfo="skip",
         showlegend=True,
     ))
+
+    # Median line
     fig.add_trace(go.Scatter(
         x=thresholds, y=med,
         mode="lines",
@@ -624,21 +634,46 @@ def plot_mc_threshold_sweep(
         line=dict(color=_BLUE, width=2),
     ))
 
+    # Three labeled points: where median crosses 90%, 50%, 10%
+    for y_lvl, pos in [(90, "top left"), (50, "top left"), (10, "top left")]:
+        x_lvl = _x_at_y(float(y_lvl))
+        if x_lvl is not None:
+            fig.add_trace(go.Scatter(
+                x=[x_lvl], y=[y_lvl],
+                mode="markers+text",
+                marker=dict(color=_ORANGE, size=9, symbol="circle"),
+                text=[f"  {x_lvl:.0f}d: {y_lvl}%"],
+                textposition="middle right",
+                textfont=dict(size=11, color=_ORANGE),
+                showlegend=False,
+                hovertemplate=f"{x_lvl:.0f}d → {y_lvl}% of providers<extra></extra>",
+            ))
+
+    # Selected threshold vline
     if threshold_marker is not None:
+        y_at_marker = float(np.interp(threshold_marker, thresholds, med))
         fig.add_vline(
             x=threshold_marker,
             line_dash="dash", line_color=_ORANGE, line_width=1.5,
-            annotation_text=f"Selected threshold: {threshold_marker}d",
-            annotation_position="top right",
         )
+        fig.add_trace(go.Scatter(
+            x=[threshold_marker], y=[y_at_marker],
+            mode="markers+text",
+            marker=dict(color=_ORANGE, size=10, symbol="diamond"),
+            text=[f"  {threshold_marker}d: {y_at_marker:.0f}%"],
+            textposition="middle right",
+            textfont=dict(size=11, color=_ORANGE),
+            showlegend=False,
+            hovertemplate=f"Selected threshold: {threshold_marker}d → {y_at_marker:.0f}%<extra></extra>",
+        ))
 
     title_suffix = f"{n_samples} simulation{'s' if n_samples != 1 else ''}"
     fig.update_layout(
-        title=f"% providers under-exposed vs. threshold ({title_suffix})",
-        xaxis_title="Maximum acceptable gap (days)",
+        title=f"% providers with gap > threshold ({title_suffix})",
+        xaxis_title="Maximum gap between HALO exposures (days)",
         yaxis_title="% providers exceeding gap",
         yaxis=dict(range=[0, 105]),
-        height=380,
+        height=400,
         legend=dict(x=0.65, y=0.95),
         margin=dict(t=60, b=40),
         plot_bgcolor="white",

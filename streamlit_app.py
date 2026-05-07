@@ -668,6 +668,22 @@ with tab_exposure:
             help=f"p10–p90: {np.percentile(_nev,10):.1f}–{np.percentile(_nev,90):.1f}",
         )
 
+        # MC threshold sweep — immediately after key metrics
+        st.divider()
+        st.subheader("Providers with gap > threshold")
+        st.caption(
+            "For each gap duration on the x-axis, the line shows the % of providers whose "
+            "maximum gap between HALO exposures exceeds that value. "
+            "Solid line = median across all runs; shaded = p10–p90."
+        )
+        if "pct_by_threshold" in mc:
+            st.plotly_chart(
+                plot_mc_threshold_sweep(
+                    mc["pct_by_threshold"], mc["sweep_thresholds"], threshold_marker=thresh,
+                ),
+                use_container_width=True,
+            )
+
         # Summary table
         st.divider()
         st.dataframe(build_mc_summary_df(mc), use_container_width=True, hide_index=True)
@@ -704,22 +720,6 @@ with tab_exposure:
         with _h3:
             st.plotly_chart(
                 plot_mc_histogram(_nev, "Median exposures / provider"),
-                use_container_width=True,
-            )
-
-        # MC threshold sweep
-        st.divider()
-        st.subheader("Gap exceedance by threshold")
-        st.caption(
-            "Each threshold on the x-axis represents the maximum allowed gap between HALO "
-            "exposures. The band shows how the % of under-exposed providers varies across "
-            "all simulation runs. Solid line = median; shaded = p10–p90."
-        )
-        if "pct_by_threshold" in mc:
-            st.plotly_chart(
-                plot_mc_threshold_sweep(
-                    mc["pct_by_threshold"], mc["sweep_thresholds"], threshold_marker=thresh,
-                ),
                 use_container_width=True,
             )
 
