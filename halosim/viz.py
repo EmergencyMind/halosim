@@ -401,3 +401,185 @@ def plot_exposure_count_histogram(results_df: pd.DataFrame) -> go.Figure:
     fig.update_xaxes(gridcolor="#E2E8F0")
     fig.update_yaxes(gridcolor="#E2E8F0")
     return fig
+
+
+# ---------------------------------------------------------------------------
+# 7. MC readiness band — baseline ± trained ribbon
+# ---------------------------------------------------------------------------
+
+def plot_mc_readiness_band(
+    readiness_b: np.ndarray,
+    readiness_t: np.ndarray | None = None,
+    rolling_days: int = 30,
+    p_low: int = 10,
+    p_high: int = 90,
+    start_date: str = "2024-01-01",
+) -> go.Figure:
+    """
+    Shaded-ribbon readiness chart across MC seeds.
+    readiness_b / readiness_t: shape (n_samples, n_days), values in [0, 1] with NaN.
+    """
+    n_samples, n_days = readiness_b.shape
+    dates = pd.date_range(start_date, periods=n_days, freq="D")
+
+    def smooth_matrix(mat: np.ndarray) -> np.ndarray:
+        out = np.empty_like(mat, dtype=float)
+        for i, row in enumerate(mat):
+            out[i] = (
+                pd.Series(row)
+                .rolling(rolling_days, min_periods=1, center=True)
+                .mean()
+                .values
+            )
+        return out * 100
+
+    sm_b = smooth_matrix(readiness_b)
+    lo_b = np.nanpercentile(sm_b, p_low, axis=0)
+    hi_b = np.nanpercentile(sm_b, p_high, axis=0)
+    med_b = np.nanpercentile(sm_b, 50, axis=0)
+
+    fig = go.Figure()
+
+    # Baseline ribbon
+    fig.add_trace(go.Scatter(
+        x=np.concatenate([dates, dates[::-1]]),
+        y=np.concatenate([hi_b, lo_b[::-1]]),
+        fill="toself",
+        fillcolor="rgba(148,163,184,0.20)",
+        line=dict(color="rgba(0,0,0,0)"),
+        showlegend=True,
+        name=f"No training (p{p_low}–p{p_high})",
+        hoverinfo="skip",
+    ))
+    fig.add_trace(go.Scatter(
+        x=dates, y=med_b,
+        mode="lines",
+        name="No training (median)",
+        line=dict(color=_GREY, width=2),
+    ))
+
+    if readiness_t is not None:
+        sm_t = smooth_matrix(readiness_t)
+        lo_t = np.nanpercentile(sm_t, p_low, axis=0)
+        hi_t = np.nanpercentile(sm_t, p_high, axis=0)
+        med_t = np.nanpercentile(sm_t, 50, axis=0)
+
+        fig.add_trace(go.Scatter(
+            x=np.concatenate([dates, dates[::-1]]),
+            y=np.concatenate([hi_t, lo_t[::-1]]),
+            fill="toself",
+            fillcolor="rgba(22,163,74,0.15)",
+            line=dict(color="rgba(0,0,0,0)"),
+            showlegend=True,
+            name=f"With training (p{p_low}–p{p_high})",
+            hoverinfo="skip",
+        ))
+        fig.add_trace(go.Scatter(
+            x=dates, y=med_t,
+            mode="lines",
+            name="With training (median)",
+            line=dict(color=_GREEN, width=2),
+        ))
+
+    title_suffix = f"{n_samples} MC run{'s' if n_samples != 1 else ''}"
+    fig.update_layout(
+        title=f"On-shift readiness — {rolling_days}-day rolling mean ({title_suffix})",
+        xaxis_title="Date",
+        yaxis_title="% ready",
+        yaxis=dict(range=[0, 105]),
+        height=420,
+        legend=dict(x=0.01, y=0.05),
+        margin=dict(t=60, b=40),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+    )
+    fig.update_xaxes(gridcolor="#E2E8F0")
+    fig.update_yaxes(gridcolor="#E2E8F0")
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 8. MC scalar histogram
+# ---------------------------------------------------------------------------
+
+def plot_mc_histogram(
+    values: np.ndarray,
+    metric_name: str,
+    unit: str = "",
+    p_low: int = 10,
+    p_high: int = 90,
+) -> go.Figure:
+    """Histogram of a per-seed scalar metric with median and percentile vlines."""
+    vals = values[np.isfinite(values)]
+    med = float(np.median(vals))
+    lo  = float(np.percentile(vals, p_low))
+    hi  = float(np.percentile(vals, p_high))
+
+    fig = go.Figure(go.Histogram(
+        x=vals,
+        marker_color=_BLUE,
+        marker_line_color="white",
+        marker_line_width=0.5,
+        opacity=0.85,
+    ))
+    fig.add_vline(x=med, line_dash="solid", line_color=_ORANGE,
+                  annotation_text=f"Median: {med:.1f}{unit}",
+                  annotation_position="top right")
+    fig.add_vline(x=lo, line_dash="dash", line_color=_GREY,
+                  annotation_text=f"p{p_low}",
+                  annotation_position="top left")
+    fig.add_vline(x=hi, line_dash="dash", line_color=_GREY,
+                  annotation_text=f"p{p_high}",
+                  annotation_position="top right")
+
+    xlabel = f"{metric_name}{' (' + unit + ')' if unit else ''}"
+    fig.update_layout(
+        title=metric_name,
+        xaxis_title=xlabel,
+        yaxis_title="Runs",
+        height=300,
+        margin=dict(t=50, b=40),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        showlegend=False,
+        bargap=0.05,
+    )
+    fig.update_xaxes(gridcolor="#E2E8F0")
+    fig.update_yaxes(gridcolor="#E2E8F0")
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 9. MC summary table
+# ---------------------------------------------------------------------------
+
+def build_mc_summary_df(mc_result: dict) -> pd.DataFrame:
+    """Return a summary DataFrame: Metric / Median / p10 / p90."""
+    thresh = mc_result["threshold"]
+    rows = []
+
+    for arr, label, unit, fmt in [
+        (mc_result["pct_exceeding"],   f"% providers exceeding {thresh}-day threshold", "%",    "{:.1f}"),
+        (mc_result["median_gap"],      "Median gap between exposures",                  " days", "{:.0f}"),
+        (mc_result["median_n_events"], "Median exposures per provider",                 "",      "{:.1f}"),
+    ]:
+        med = np.median(arr)
+        lo  = np.percentile(arr, 10)
+        hi  = np.percentile(arr, 90)
+        rows.append({
+            "Metric":   label,
+            "Median":   fmt.format(med) + unit,
+            "p10":      fmt.format(lo)  + unit,
+            "p90":      fmt.format(hi)  + unit,
+        })
+
+    if mc_result.get("lift") is not None:
+        lift = mc_result["lift"]
+        rows.append({
+            "Metric":  "Training lift",
+            "Median":  f"{np.median(lift):+.1f} pp",
+            "p10":     f"{np.percentile(lift, 10):+.1f} pp",
+            "p90":     f"{np.percentile(lift, 90):+.1f} pp",
+        })
+
+    return pd.DataFrame(rows)
