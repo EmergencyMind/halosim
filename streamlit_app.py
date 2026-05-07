@@ -21,7 +21,6 @@ from halosim.schedules import (
 )
 from halosim.simulation import Simulation
 from halosim.viz import (
-    plot_training_comparison,
     plot_mc_readiness_band,
     plot_mc_histogram,
     plot_mc_threshold_sweep,
@@ -155,27 +154,6 @@ def _mc_hash() -> str:
         + f":{s.training_program}:{s.training_effect}:{s.training_equivalence}"
     )
 
-
-@st.cache_data(show_spinner=False, max_entries=8)
-def _run_sim(
-    n_days, providers_tuple, schedule, events_df, seed,
-    readiness_model, readiness_threshold,
-    training_program, training_interval, training_start,
-    training_effect, training_equivalence,
-) -> "Simulation":
-    sim = Simulation(
-        n_days=n_days, providers=list(providers_tuple),
-        schedule=schedule, events=events_df, seed=seed,
-        readiness_model=readiness_model,
-        readiness_threshold_days=readiness_threshold,
-        training_program=training_program,
-        training_interval_days=training_interval,
-        training_start_day=training_start,
-        training_effect=training_effect,
-        training_equivalence=training_equivalence,
-    )
-    sim.run()
-    return sim
 
 
 def _run_mc(
@@ -355,7 +333,7 @@ tab_params, tab_exposure, tab_training = st.tabs(
 with tab_params:
 
     # ── Simulation ──────────────────────────────────────────────────────────
-    st.subheader("Simulation")
+    st.subheader("Simulation (1/4)")
     _p1, _p2 = st.columns(2)
 
     with _p1:
@@ -403,7 +381,7 @@ with tab_params:
 
     # ── HALO Events ─────────────────────────────────────────────────────────
     st.divider()
-    st.subheader("HALO Events")
+    st.subheader("HALO Events (2/4)")
 
     _ev_src_opts = ["Generate (Poisson MC)", "Upload CSV / Excel"]
     event_source = st.radio(
@@ -467,7 +445,7 @@ with tab_params:
 
     # ── Provider Schedules ───────────────────────────────────────────────────
     st.divider()
-    st.subheader("Provider Schedules")
+    st.subheader("Provider Schedules (3/4)")
 
     _sc_src_opts = ["Generate schedules", "Upload CSV / Excel"]
     sched_source = st.radio(
@@ -561,19 +539,27 @@ with tab_params:
 
     # ── Training Program ─────────────────────────────────────────────────────
     st.divider()
-    st.subheader("Training Program")
+    st.subheader("Training Program (4/4)")
     st.caption("Optional. Select a program to compare trained vs. untrained readiness.")
 
-    _prog_labels = list(_PROG_MAP.keys())
     _cur_label = {v: k for k, v in _PROG_MAP.items()}.get(
         st.session_state.training_program, "None (exposure only)"
     )
-    _sel_label = st.selectbox(
-        "Program", _prog_labels,
-        index=_prog_labels.index(_cur_label),
-        label_visibility="collapsed",
-    )
-    st.session_state.training_program = _PROG_MAP[_sel_label]
+    _prog_grid = [
+        ["None (exposure only)",       "Monthly (every 30 days)"],
+        ["Bi-monthly (every 60 days)", "Quarterly (every 91 days)"],
+    ]
+    for _row in _prog_grid:
+        _cols = st.columns(2)
+        for _col, _label in zip(_cols, _row):
+            with _col:
+                if st.button(
+                    _label,
+                    type="primary" if _cur_label == _label else "secondary",
+                    use_container_width=True,
+                ):
+                    st.session_state.training_program = _PROG_MAP[_label]
+                    _cur_label = _label
 
     if st.session_state.training_program != "none":
         _eff_opts = ["Full reset (training = live exposure)", "Partial boost"]
@@ -823,56 +809,6 @@ with tab_training:
                 )
             st.info(_interp)
 
-            # Program comparison (reference run)
-            st.divider()
-            st.subheader("Program comparison (reference run)")
-            st.caption(
-                "Overlay multiple programs using the reference run schedule and events. "
-                "Vertical lines mark training days."
-            )
-
-            _cmp_opts = {
-                "No training":       "none",
-                "Monthly (30d)":     "monthly",
-                "Bi-monthly (60d)":  "bimonthly",
-                "Quarterly (91d)":   "quarterly",
-            }
-            _act_lbl = {v: k for k, v in _cmp_opts.items()}.get(
-                mc["training_program"], "No training"
-            )
-            _selected = st.multiselect(
-                "Programs to overlay",
-                list(_cmp_opts.keys()),
-                default=["No training"] + ([_act_lbl] if _act_lbl != "No training" else []),
-                key="cmp_progs",
-            )
-
-            if _selected:
-                _cmp_data: dict[str, np.ndarray] = {}
-                _cmp_tdays: dict[str, list[int]] = {}
-                for _lbl in _selected:
-                    _prog = _cmp_opts[_lbl]
-                    _ivl  = _PROG_INTERVALS.get(_prog, 30)
-                    _csim = _run_sim(
-                        mc["n_days"], tuple(mc["providers"]),
-                        mc["ref_schedule"], mc["ref_events_df"],
-                        int(st.session_state.seed),
-                        st.session_state.readiness_model,
-                        st.session_state.readiness_threshold,
-                        _prog, _ivl, _TRAINING_START,
-                        st.session_state.training_effect,
-                        st.session_state.training_equivalence,
-                    )
-                    _cmp_data[_lbl] = _csim.proportion_ready_on_shift
-                    if _prog != "none":
-                        _cmp_tdays[_lbl] = list(
-                            np.arange(_TRAINING_START, mc["n_days"], _ivl, dtype=int)
-                        )
-                st.plotly_chart(
-                    plot_training_comparison(_cmp_data, mc["n_days"], _roll_t,
-                                            training_days=_cmp_tdays),
-                    use_container_width=True,
-                )
 
 
 # ---------------------------------------------------------------------------
