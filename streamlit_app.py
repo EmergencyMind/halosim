@@ -24,7 +24,6 @@ from halosim.viz import (
     plot_mc_readiness_band,
     plot_mc_histogram,
     plot_mc_threshold_sweep,
-    plot_mc_readiness_cdf,
     build_mc_summary_df,
 )
 
@@ -782,17 +781,22 @@ with tab_training:
                 _c6.metric("Providers reached — ref run", f"{int(_tm.any(axis=1).sum()):,}",
                            help="Unique providers trained at least once (seed-0).")
 
-            # Readiness CDF — baseline vs trained
+            # Gap threshold sweep — baseline vs trained
             st.divider()
-            st.subheader("Readiness distribution")
+            st.subheader("Providers with gap > threshold")
             st.caption(
-                "For each readiness level on the x-axis, the curve shows what % of on-shift days "
-                "the team reached that level or higher. "
+                "For each gap duration on the x-axis, the curve shows the % of providers whose "
+                "maximum gap between HALO exposures exceeds that value. "
                 "Blue = exposure only · Green = with training. "
                 "Solid line = median; shaded = p10–p90 across all runs."
             )
             st.plotly_chart(
-                plot_mc_readiness_cdf(mc["readiness_b"], mc["readiness_t"]),
+                plot_mc_threshold_sweep(
+                    mc["pct_by_threshold"],
+                    mc["sweep_thresholds"],
+                    pct_by_threshold_t=mc.get("pct_by_threshold_t"),
+                    threshold_marker=mc["threshold"],
+                ),
                 use_container_width=True,
             )
 
