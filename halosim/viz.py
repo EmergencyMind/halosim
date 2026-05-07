@@ -660,7 +660,7 @@ def plot_mc_threshold_sweep(
         ))
 
     # Markers on baseline curve; if trained curve present, add barbell lines + trained markers
-    _marker_levels = [(90, "circle", 9), (50, "diamond", 11), (10, "circle", 9)]
+    _marker_levels = [(90, "circle", 12), (50, "diamond", 14), (10, "circle", 12)]
     for y_lvl, symbol, size in _marker_levels:
         x_b = _x_at_y(med_b, float(y_lvl))
         x_t = _x_at_y(med_t, float(y_lvl)) if pct_by_threshold_t is not None else None
@@ -693,7 +693,7 @@ def plot_mc_threshold_sweep(
             fig.add_trace(go.Scatter(
                 x=[x_t, x_b], y=[y_lvl, y_lvl],
                 mode="lines",
-                line=dict(color=_ORANGE, width=1.5, dash="dot"),
+                line=dict(color=_ORANGE, width=2.5),
                 showlegend=False,
                 hoverinfo="skip",
             ))
