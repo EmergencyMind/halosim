@@ -963,7 +963,7 @@ if run_btn or st.session_state.get("_auto_run", False):
 
     _fresh_seeds = tuple(int(x) for x in np.random.randint(1000, 10001, _s.mc_n_samples))
 
-    _pbar = st.progress(0, text=f"Run 0 of {_s.mc_n_samples}…")
+    _pbar = st.sidebar.progress(0, text=f"Run 0 of {_s.mc_n_samples}…")
     _mc = _run_mc(
             n_days=_s.n_days,
             providers_tuple=tuple(providers_list),
