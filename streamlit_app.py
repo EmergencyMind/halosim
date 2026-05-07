@@ -388,13 +388,13 @@ with tab_params:
         if n_providers > WARN_PROVIDERS:
             st.warning(f"⚠️ {n_providers:,} providers — may be slow.")
 
-        _n_samp = st.slider(
+        _n_samp = int(st.number_input(
             "Number of simulations",
             min_value=1, max_value=200,
-            value=st.session_state.mc_n_samples,
+            value=st.session_state.mc_n_samples, step=10,
             help="Each simulation draws independent random seeds for event timing and "
                  "shift assignments. N=1 gives a single result; N≥50 gives distributions.",
-        )
+        ))
         st.session_state.mc_n_samples = _n_samp
 
 
@@ -411,40 +411,19 @@ with tab_params:
     st.session_state.event_source = event_source
 
     if event_source == "Generate (Poisson MC)":
-        _lc1, _lc2 = st.columns(2)
-        with _lc1:
-            if st.button("Load sample events (48 / year)", use_container_width=True):
-                _raw = (DATA_DIR / "sample_events.csv").read_bytes()
-                _df, _ = load_events_from_upload(_raw, "sample_events.csv", n_days)
-                if _df is not None:
-                    st.session_state.events_df    = _df
-                    st.session_state.event_source = "Upload CSV / Excel"
-                    st.rerun()
-        with _lc2:
-            if st.button("Load full demo (20 providers)", use_container_width=True,
-                         help="Loads sample events + schedule and runs the simulation."):
-                _raw_ev = (DATA_DIR / "sample_events.csv").read_bytes()
-                _df_ev, _ = load_events_from_upload(_raw_ev, "sample_events.csv", 365)
-                _raw_sc = (DATA_DIR / "sample_schedule.csv").read_bytes()
-                _arr, _provs, _ = load_schedule_from_upload(_raw_sc, "sample_schedule.csv", 365)
-                if _df_ev is not None and _arr is not None:
-                    st.session_state.events_df          = _df_ev
-                    st.session_state.event_source       = "Upload CSV / Excel"
-                    st.session_state.events_errors      = []
-                    st.session_state.schedule_array     = _arr
-                    st.session_state.schedule_providers = _provs
-                    st.session_state.schedule_source    = "Upload CSV / Excel"
-                    st.session_state.schedule_errors    = []
-                    st.session_state.n_days             = 365
-                    st.session_state.n_providers        = len(_provs)
-                    st.session_state._auto_run          = True
-                    st.rerun()
+        if st.button("Load sample events (48 / year)"):
+            _raw = (DATA_DIR / "sample_events.csv").read_bytes()
+            _df, _ = load_events_from_upload(_raw, "sample_events.csv", n_days)
+            if _df is not None:
+                st.session_state.events_df    = _df
+                st.session_state.event_source = "Upload CSV / Excel"
+                st.rerun()
 
-        rate_per_year = st.slider(
-            "Event rate (events / year)", 1, 365,
+        rate_per_year = int(st.number_input(
+            "Events per year", min_value=1, max_value=365,
             value=round(st.session_state.event_rate * 365), step=1,
             help="~51/year matches cardiac arrest rate in PMID: 41633464",
-        )
+        ))
         st.session_state.event_rate = rate_per_year / 365.0
         st.caption(
             f"~**{st.session_state.event_rate * 30.44:.1f} events/month** &nbsp;·&nbsp; "

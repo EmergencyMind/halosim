@@ -634,8 +634,8 @@ def plot_mc_threshold_sweep(
         line=dict(color=_BLUE, width=2),
     ))
 
-    # Three labeled points: where median crosses 90%, 50%, 10%
-    for y_lvl, pos in [(90, "top left"), (50, "top left"), (10, "top left")]:
+    # Circles at 90% and 10% crossings
+    for y_lvl in [90, 10]:
         x_lvl = _x_at_y(float(y_lvl))
         if x_lvl is not None:
             fig.add_trace(go.Scatter(
@@ -649,23 +649,29 @@ def plot_mc_threshold_sweep(
                 hovertemplate=f"{x_lvl:.0f}d → {y_lvl}% of providers<extra></extra>",
             ))
 
-    # Selected threshold vline
-    if threshold_marker is not None:
-        y_at_marker = float(np.interp(threshold_marker, thresholds, med))
-        fig.add_vline(
-            x=threshold_marker,
-            line_dash="dash", line_color=_ORANGE, line_width=1.5,
-        )
+    # Diamond at 50% (median) crossing
+    x_at_50 = _x_at_y(50.0)
+    if x_at_50 is not None:
         fig.add_trace(go.Scatter(
-            x=[threshold_marker], y=[y_at_marker],
+            x=[x_at_50], y=[50.0],
             mode="markers+text",
-            marker=dict(color=_ORANGE, size=10, symbol="diamond"),
-            text=[f"  {threshold_marker}d: {y_at_marker:.0f}%"],
+            marker=dict(color=_ORANGE, size=11, symbol="diamond"),
+            text=[f"  {x_at_50:.0f}d: 50%"],
             textposition="middle right",
             textfont=dict(size=11, color=_ORANGE),
             showlegend=False,
-            hovertemplate=f"Selected threshold: {threshold_marker}d → {y_at_marker:.0f}%<extra></extra>",
+            hovertemplate=f"{x_at_50:.0f}d → 50% of providers<extra></extra>",
         ))
+
+    # Selected threshold vline (no extra marker — circles/diamond already label the curve)
+    if threshold_marker is not None:
+        fig.add_vline(
+            x=threshold_marker,
+            line_dash="dash", line_color=_ORANGE, line_width=1.5,
+            annotation_text=f"{threshold_marker}d",
+            annotation_position="top right",
+            annotation_font=dict(color=_ORANGE, size=11),
+        )
 
     title_suffix = f"{n_samples} simulation{'s' if n_samples != 1 else ''}"
     fig.update_layout(
