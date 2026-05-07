@@ -596,53 +596,72 @@ def build_mc_summary_df(mc_result: dict) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def plot_mc_threshold_sweep(
-    pct_by_threshold: np.ndarray,  # (n_samples, n_thresholds)
+    pct_by_threshold: np.ndarray,        # (n_samples, n_thresholds) — baseline
     thresholds: np.ndarray,
+    pct_by_threshold_t: np.ndarray | None = None,  # (n_samples, n_thresholds) — trained
     threshold_marker: int | None = None,
     p_low: int = 10,
     p_high: int = 90,
 ) -> go.Figure:
     """
     Ribbon chart: for each threshold (x), % providers with max gap > threshold (y).
-    Band = p_low–p_high across MC runs; solid line = median.
-    Labels the x-values where the median curve crosses 90%, 50%, and 10%.
+    Blue ribbon = baseline (exposure only). Optional green ribbon = with training.
     """
     n_samples = pct_by_threshold.shape[0]
-    lo  = np.percentile(pct_by_threshold, p_low,  axis=0)
-    hi  = np.percentile(pct_by_threshold, p_high, axis=0)
-    med = np.percentile(pct_by_threshold, 50,     axis=0)
+    lo_b  = np.percentile(pct_by_threshold, p_low,  axis=0)
+    hi_b  = np.percentile(pct_by_threshold, p_high, axis=0)
+    med_b = np.percentile(pct_by_threshold, 50,     axis=0)
 
-    def _x_at_y(y_target: float) -> float | None:
-        """Find the x-value (threshold) where the median curve first crosses y_target."""
-        if med[0] < y_target or med[-1] > y_target:
+    def _x_at_y(med_curve: np.ndarray, y_target: float) -> float | None:
+        if med_curve[0] < y_target or med_curve[-1] > y_target:
             return None
-        return float(np.interp(y_target, med[::-1], thresholds[::-1]))
+        return float(np.interp(y_target, med_curve[::-1], thresholds[::-1]))
 
     fig = go.Figure()
 
-    # Ribbon
+    # Blue ribbon — exposure only
     fig.add_trace(go.Scatter(
         x=np.concatenate([thresholds, thresholds[::-1]]),
-        y=np.concatenate([hi, lo[::-1]]),
+        y=np.concatenate([hi_b, lo_b[::-1]]),
         fill="toself",
         fillcolor="rgba(37,99,235,0.12)",
         line=dict(color="rgba(0,0,0,0)"),
-        name=f"p{p_low}–p{p_high}",
+        name=f"Exposure only (p{p_low}–p{p_high})",
         hoverinfo="skip",
         showlegend=True,
     ))
-
-    # Median line
     fig.add_trace(go.Scatter(
-        x=thresholds, y=med,
+        x=thresholds, y=med_b,
         mode="lines",
-        name="Median",
+        name="Exposure only (median)",
         line=dict(color=_BLUE, width=2),
     ))
 
-    # Circles at 90% and 10% crossings
+    # Green ribbon — with training (optional)
+    if pct_by_threshold_t is not None:
+        lo_t  = np.percentile(pct_by_threshold_t, p_low,  axis=0)
+        hi_t  = np.percentile(pct_by_threshold_t, p_high, axis=0)
+        med_t = np.percentile(pct_by_threshold_t, 50,     axis=0)
+        fig.add_trace(go.Scatter(
+            x=np.concatenate([thresholds, thresholds[::-1]]),
+            y=np.concatenate([hi_t, lo_t[::-1]]),
+            fill="toself",
+            fillcolor="rgba(22,163,74,0.12)",
+            line=dict(color="rgba(0,0,0,0)"),
+            name=f"With training (p{p_low}–p{p_high})",
+            hoverinfo="skip",
+            showlegend=True,
+        ))
+        fig.add_trace(go.Scatter(
+            x=thresholds, y=med_t,
+            mode="lines",
+            name="With training (median)",
+            line=dict(color=_GREEN, width=2),
+        ))
+
+    # Circles at 90% and 10%, diamond at 50% — on baseline curve
     for y_lvl in [90, 10]:
-        x_lvl = _x_at_y(float(y_lvl))
+        x_lvl = _x_at_y(med_b, float(y_lvl))
         if x_lvl is not None:
             fig.add_trace(go.Scatter(
                 x=[x_lvl], y=[y_lvl],
@@ -654,9 +673,7 @@ def plot_mc_threshold_sweep(
                 showlegend=False,
                 hovertemplate=f"{x_lvl:.0f}d → {y_lvl}% of providers<extra></extra>",
             ))
-
-    # Diamond at 50% (median) crossing
-    x_at_50 = _x_at_y(50.0)
+    x_at_50 = _x_at_y(med_b, 50.0)
     if x_at_50 is not None:
         fig.add_trace(go.Scatter(
             x=[x_at_50], y=[50.0],
@@ -669,7 +686,6 @@ def plot_mc_threshold_sweep(
             hovertemplate=f"{x_at_50:.0f}d → 50% of providers<extra></extra>",
         ))
 
-    # Selected threshold vline (no extra marker — circles/diamond already label the curve)
     if threshold_marker is not None:
         fig.add_vline(
             x=threshold_marker,
@@ -686,7 +702,7 @@ def plot_mc_threshold_sweep(
         yaxis_title="% providers exceeding gap",
         yaxis=dict(range=[0, 105]),
         height=400,
-        legend=dict(x=0.65, y=0.95),
+        legend=dict(x=0.55, y=0.95),
         margin=dict(t=60, b=40),
         plot_bgcolor="white",
         paper_bgcolor="white",

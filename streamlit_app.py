@@ -176,7 +176,7 @@ def _run_mc(
     )
 
     readiness_b_list, readiness_t_list, lift_list = [], [], []
-    pct_exc_list, med_gap_list, med_nev_list, pct_by_thr_list = [], [], [], []
+    pct_exc_list, med_gap_list, med_nev_list, pct_by_thr_list, pct_by_thr_t_list = [], [], [], [], []
     ref = {}
     _sweep_thresholds = np.arange(7, 366)
 
@@ -245,6 +245,10 @@ def _run_mc(
                 (np.nanmean(sim_t.proportion_ready_on_shift)
                  - np.nanmean(sim_b.proportion_ready_on_shift)) * 100
             )
+            _gap_max_t = sim_t.results_df["gap_max"].fillna(9999).values
+            pct_by_thr_t_list.append(
+                np.array([100.0 * (_gap_max_t > t).mean() for t in _sweep_thresholds])
+            )
 
         if s == 0:
             ref = {
@@ -273,6 +277,7 @@ def _run_mc(
         "providers":          list(providers_tuple),
         "seeds":              list(seeds_tuple),
         "pct_by_threshold":   np.array(pct_by_thr_list),
+        "pct_by_threshold_t": np.array(pct_by_thr_t_list) if pct_by_thr_t_list else None,
         "sweep_thresholds":   _sweep_thresholds,
         **{f"ref_{k}": v for k, v in ref.items()},
     }
@@ -775,6 +780,23 @@ with tab_training:
                            help="Days with at least one provider trained (seed-0).")
                 _c6.metric("Providers reached — ref run", f"{int(_tm.any(axis=1).sum()):,}",
                            help="Unique providers trained at least once (seed-0).")
+
+            # Threshold sweep — baseline vs trained
+            st.divider()
+            st.subheader("Providers with gap > threshold")
+            st.caption(
+                "Blue = exposure only · Green = with training. "
+                "Solid line = median; shaded = p10–p90 across all runs."
+            )
+            st.plotly_chart(
+                plot_mc_threshold_sweep(
+                    mc["pct_by_threshold"],
+                    mc["sweep_thresholds"],
+                    pct_by_threshold_t=mc.get("pct_by_threshold_t"),
+                    threshold_marker=mc["threshold"],
+                ),
+                use_container_width=True,
+            )
 
             # Readiness band chart
             st.divider()
