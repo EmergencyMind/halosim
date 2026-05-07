@@ -659,32 +659,44 @@ def plot_mc_threshold_sweep(
             line=dict(color=_GREEN, width=2),
         ))
 
-    # Circles at 90% and 10%, diamond at 50% — on baseline curve
-    for y_lvl in [90, 10]:
-        x_lvl = _x_at_y(med_b, float(y_lvl))
-        if x_lvl is not None:
+    # Markers on baseline curve; if trained curve present, add barbell lines + trained markers
+    _marker_levels = [(90, "circle", 9), (50, "diamond", 11), (10, "circle", 9)]
+    for y_lvl, symbol, size in _marker_levels:
+        x_b = _x_at_y(med_b, float(y_lvl))
+        x_t = _x_at_y(med_t, float(y_lvl)) if pct_by_threshold_t is not None else None
+
+        if x_b is not None:
             fig.add_trace(go.Scatter(
-                x=[x_lvl], y=[y_lvl],
+                x=[x_b], y=[y_lvl],
                 mode="markers+text",
-                marker=dict(color=_ORANGE, size=9, symbol="circle"),
-                text=[f"  {x_lvl:.0f}d: {y_lvl}%"],
+                marker=dict(color=_ORANGE, size=size, symbol=symbol),
+                text=[f"  {x_b:.0f}d"],
                 textposition="middle right",
                 textfont=dict(size=11, color=_ORANGE),
                 showlegend=False,
-                hovertemplate=f"{x_lvl:.0f}d → {y_lvl}% of providers<extra></extra>",
+                hovertemplate=f"{x_b:.0f}d → {y_lvl}% (exposure only)<extra></extra>",
             ))
-    x_at_50 = _x_at_y(med_b, 50.0)
-    if x_at_50 is not None:
-        fig.add_trace(go.Scatter(
-            x=[x_at_50], y=[50.0],
-            mode="markers+text",
-            marker=dict(color=_ORANGE, size=11, symbol="diamond"),
-            text=[f"  {x_at_50:.0f}d: 50%"],
-            textposition="middle right",
-            textfont=dict(size=11, color=_ORANGE),
-            showlegend=False,
-            hovertemplate=f"{x_at_50:.0f}d → 50% of providers<extra></extra>",
-        ))
+
+        if x_t is not None:
+            fig.add_trace(go.Scatter(
+                x=[x_t], y=[y_lvl],
+                mode="markers+text",
+                marker=dict(color=_ORANGE, size=size, symbol=symbol),
+                text=[f"{x_t:.0f}d  "],
+                textposition="middle left",
+                textfont=dict(size=11, color=_ORANGE),
+                showlegend=False,
+                hovertemplate=f"{x_t:.0f}d → {y_lvl}% (with training)<extra></extra>",
+            ))
+
+        if x_b is not None and x_t is not None:
+            fig.add_trace(go.Scatter(
+                x=[x_t, x_b], y=[y_lvl, y_lvl],
+                mode="lines",
+                line=dict(color=_ORANGE, width=1.5, dash="dot"),
+                showlegend=False,
+                hoverinfo="skip",
+            ))
 
     if threshold_marker is not None:
         fig.add_vline(
