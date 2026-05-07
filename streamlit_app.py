@@ -471,12 +471,19 @@ with tab_params:
         cur_type = st.session_state.get("schedule_type", DEFAULT_SCHEDULE_TYPE)
         if cur_type not in SCHEDULE_TYPES:
             cur_type = DEFAULT_SCHEDULE_TYPE
-        sel_type = st.radio(
-            "Schedule type", SCHEDULE_TYPES,
-            index=SCHEDULE_TYPES.index(cur_type),
-            captions=list(_type_captions.values()),
-        )
-        st.session_state.schedule_type = sel_type
+        _sched_rows = [SCHEDULE_TYPES[i:i+3] for i in range(0, len(SCHEDULE_TYPES), 3)]
+        for _srow in _sched_rows:
+            _scols = st.columns(3)
+            for _sc, _stype in zip(_scols, _srow):
+                with _sc:
+                    if st.button(
+                        _stype,
+                        help=_type_captions.get(_stype, ""),
+                        type="primary" if cur_type == _stype else "secondary",
+                        use_container_width=True,
+                    ):
+                        cur_type = _stype
+        st.session_state.schedule_type = cur_type
 
         with st.expander("Advanced: custom shift weights"):
             _d_def = st.session_state.get("schedule_day_pct") or 25
