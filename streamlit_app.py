@@ -701,44 +701,20 @@ with tab_exposure:
 
         # Downloads
         st.divider()
-        st.subheader("Downloads")
-        _d1, _d2, _d3 = st.columns(3)
-        with _d1:
-            _rdf2 = rdf.copy()
-            if "gap_mean" in _rdf2.columns:
-                _rdf2["gap_mean"] = _rdf2["gap_mean"].round(3)
-            st.download_button(
-                "📥 Exposure stats — ref run",
-                data=_rdf2.to_csv(index=False).encode(),
-                file_name="halosim_exposure.csv", mime="text/csv",
-                use_container_width=True,
-            )
-        with _d2:
-            _ev_dl = mc["ref_events_df"][["day_idx", "shift_type"]].copy()
-            if "date" in mc["ref_events_df"].columns:
-                _ev_dl.insert(0, "date", mc["ref_events_df"]["date"])
-            st.download_button(
-                "📥 Events — ref run",
-                data=_ev_dl.to_csv(index=False).encode(),
-                file_name="halosim_events.csv", mime="text/csv",
-                use_container_width=True,
-            )
-        with _d3:
-            _mc_dl = pd.DataFrame({
-                "run":                     list(range(1, n_samp + 1)),
-                "seed":                    mc["seeds"],
-                "pct_exceeding_threshold": mc["pct_exceeding"].round(2),
-                "median_gap_days":         mc["median_gap"].round(1),
-                "median_n_events":         mc["median_n_events"].round(1),
-            })
-            if mc["lift"] is not None:
-                _mc_dl["training_lift_pp"] = mc["lift"].round(2)
-            st.download_button(
-                "📥 MC scalar results",
-                data=_mc_dl.to_csv(index=False).encode(),
-                file_name="halosim_mc.csv", mime="text/csv",
-                use_container_width=True,
-            )
+        _mc_dl = pd.DataFrame({
+            "run":                     list(range(1, n_samp + 1)),
+            "seed":                    mc["seeds"],
+            "pct_exceeding_threshold": mc["pct_exceeding"].round(2),
+            "median_gap_days":         mc["median_gap"].round(1),
+            "median_n_events":         mc["median_n_events"].round(1),
+        })
+        if mc["lift"] is not None:
+            _mc_dl["training_lift_pp"] = mc["lift"].round(2)
+        st.download_button(
+            "📥 Download MC results",
+            data=_mc_dl.to_csv(index=False).encode(),
+            file_name="halosim_mc.csv", mime="text/csv",
+        )
 
         # Simulated data expanders
         with st.expander("View simulated events (reference run)"):
