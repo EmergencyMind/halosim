@@ -716,33 +716,6 @@ with tab_exposure:
             file_name="halosim_mc.csv", mime="text/csv",
         )
 
-        # Simulated data expanders
-        with st.expander("View simulated events (reference run)"):
-            _ev = mc["ref_events_df"]
-            _ne = len(_ev)
-            _nd = int((_ev["shift_type"] == "day").sum())
-            _nn = int((_ev["shift_type"] == "night").sum())
-            _exp = round(st.session_state.event_rate * mc["n_days"])
-            e1, e2, e3 = st.columns(3)
-            if st.session_state.event_source == "Generate (Poisson MC)":
-                e1.metric("Events (seed-0)", _ne, delta=f"{_ne-_exp:+d} vs {_exp} expected",
-                          delta_color="off")
-            else:
-                e1.metric("Events (uploaded)", _ne)
-            e2.metric("Day", f"{_nd} ({100*_nd//_ne if _ne else 0}%)")
-            e3.metric("Night", f"{_nn} ({100*_nn//_ne if _ne else 0}%)")
-
-        with st.expander("View simulated schedules (reference run)"):
-            _sch = mc["ref_schedule"]
-            _prv = mc["providers"]
-            _np2, _nd2 = _sch.shape
-            s1, s2, s3 = st.columns(3)
-            _dc = (_sch == "d").sum(axis=1)
-            _nc = (_sch == "n").sum(axis=1)
-            _oc = (_sch == "o").sum(axis=1)
-            s1.metric("Avg day shifts / provider", f"{_dc.mean():.1f} ({100*_dc.mean()/_nd2:.0f}%)")
-            s2.metric("Avg night shifts / provider", f"{_nc.mean():.1f} ({100*_nc.mean()/_nd2:.0f}%)")
-            s3.metric("Avg days off / provider", f"{_oc.mean():.1f} ({100*_oc.mean()/_nd2:.0f}%)")
 
 
 # ── Tab 2: Training Effects ────────────────────────────────────────────────
