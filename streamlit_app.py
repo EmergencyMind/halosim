@@ -88,7 +88,7 @@ def _init_state():
         "seed": 42,
         # events
         "event_source": "Generate (Poisson MC)",
-        "event_rate": 0.14,
+        "event_rate": 50 / 365.0,
         "event_day_pct": 50,
         "events_df": None,
         "events_errors": [],
@@ -178,7 +178,6 @@ def _run_sim(
     return sim
 
 
-@st.cache_data(show_spinner=False, max_entries=4)
 def _run_mc(
     n_days, providers_tuple, fixed_schedule, fixed_events_df,
     event_source, event_rate, event_day_pct,
@@ -187,6 +186,7 @@ def _run_mc(
     training_program, training_interval, training_start,
     training_effect, training_equivalence,
     seeds_tuple,
+    _progress_bar=None,
 ) -> dict:
     n_providers = len(providers_tuple)
     n_samples   = len(seeds_tuple)
@@ -277,6 +277,9 @@ def _run_mc(
                 "proportion_t":  sim_t.proportion_ready_on_shift.copy() if sim_t else None,
                 "training_mat":  sim_t.training_matrix.copy() if sim_t else None,
             }
+
+        if _progress_bar is not None:
+            _progress_bar.progress((s + 1) / n_samples, text=f"Run {s + 1} of {n_samples}…")
 
     return {
         "readiness_b":     np.array(readiness_b_list),
@@ -411,14 +414,6 @@ with tab_params:
     st.session_state.event_source = event_source
 
     if event_source == "Generate (Poisson MC)":
-        if st.button("Load sample events (48 / year)"):
-            _raw = (DATA_DIR / "sample_events.csv").read_bytes()
-            _df, _ = load_events_from_upload(_raw, "sample_events.csv", n_days)
-            if _df is not None:
-                st.session_state.events_df    = _df
-                st.session_state.event_source = "Upload CSV / Excel"
-                st.rerun()
-
         rate_per_year = int(st.number_input(
             "Events per year", min_value=1, max_value=365,
             value=round(st.session_state.event_rate * 365), step=1,
@@ -663,24 +658,26 @@ with tab_exposure:
                 use_container_width=True,
             )
 
-        # Summary table
-        st.divider()
-        st.dataframe(build_mc_summary_df(mc), use_container_width=True, hide_index=True)
-
-        # Readiness band
+        # Readiness band — just below threshold sweep
         st.divider()
         st.subheader("On-shift readiness over time")
         st.caption(
             "Shaded band = p10–p90 across all runs. Solid line = median. "
             "Off-shift providers excluded."
         )
-        _roll_e = st.slider("Rolling mean (days)", 1, 90,
-                            st.session_state.get("_roll_e", 30), key="roll_e")
-        st.session_state["_roll_e"] = _roll_e
+        with st.expander("Chart options"):
+            _roll_e = st.slider("Rolling mean (days)", 1, 90,
+                                st.session_state.get("_roll_e", 30), key="roll_e")
+            st.session_state["_roll_e"] = _roll_e
         st.plotly_chart(
-            plot_mc_readiness_band(mc["readiness_b"], rolling_days=_roll_e),
+            plot_mc_readiness_band(mc["readiness_b"],
+                                   rolling_days=st.session_state.get("_roll_e", 30)),
             use_container_width=True,
         )
+
+        # Summary table
+        st.divider()
+        st.dataframe(build_mc_summary_df(mc), use_container_width=True, hide_index=True)
 
         # Histograms
         st.divider()
@@ -966,8 +963,8 @@ if run_btn or st.session_state.get("_auto_run", False):
 
     _fresh_seeds = tuple(int(x) for x in np.random.randint(1000, 10001, _s.mc_n_samples))
 
-    with st.spinner(f"Running {_s.mc_n_samples} simulation{'s' if _s.mc_n_samples != 1 else ''}…"):
-        _mc = _run_mc(
+    _pbar = st.progress(0, text=f"Run 0 of {_s.mc_n_samples}…")
+    _mc = _run_mc(
             n_days=_s.n_days,
             providers_tuple=tuple(providers_list),
             fixed_schedule=fixed_schedule,
@@ -987,7 +984,9 @@ if run_btn or st.session_state.get("_auto_run", False):
             training_effect=_s.training_effect,
             training_equivalence=_s.training_equivalence,
             seeds_tuple=_fresh_seeds,
+            _progress_bar=_pbar,
         )
+    _pbar.empty()
 
     st.session_state.mc_result = _mc
     st.session_state.mc_ran    = True
