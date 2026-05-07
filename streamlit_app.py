@@ -294,7 +294,9 @@ def _run_mc(
         "n_days":          n_days,
         "n_samples":       n_samples,
         "threshold":       readiness_threshold,
-        "training_program": training_program,
+        "training_program":      training_program,
+        "training_effect":       training_effect,
+        "training_equivalence":  training_equivalence,
         "providers":          list(providers_tuple),
         "seeds":              list(seeds_tuple),
         "pct_by_threshold":   np.array(pct_by_thr_list),
@@ -807,9 +809,17 @@ with tab_training:
             st.subheader("Providers with effective gap > threshold")
             st.caption(
                 "Blue = maximum gap between HALO exposures only (same as Exposure tab). "
-                "Green = maximum effective gap, counting HALO exposures and training sessions as resets. "
+                "Green = maximum effective gap, counting both HALO exposures and training sessions "
+                "as resets — only providers who are on shift on a training day receive that reset. "
                 "Solid line = median; shaded = p10–p90 across all runs."
             )
+            if mc.get("training_effect") == "partial":
+                _eq = mc.get("training_equivalence", 1.0)
+                st.warning(
+                    f"**Partial boost active ({_eq:.0%} equivalence):** the effective gap chart "
+                    "treats every training session as a full reset regardless of equivalence. "
+                    "The green ribbon overestimates training benefit."
+                )
             st.plotly_chart(
                 plot_mc_threshold_sweep(
                     mc["pct_by_threshold"],
