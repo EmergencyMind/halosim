@@ -24,6 +24,7 @@ from halosim.viz import (
     plot_mc_readiness_band,
     plot_mc_histogram,
     plot_mc_threshold_sweep,
+    plot_mc_readiness_cdf,
     build_mc_summary_df,
 )
 
@@ -487,8 +488,8 @@ with tab_params:
                         type="primary" if cur_type == _stype else "secondary",
                         use_container_width=True,
                     ):
-                        cur_type = _stype
-        st.session_state.schedule_type = cur_type
+                        st.session_state.schedule_type = _stype
+                        st.rerun()
 
         with st.expander("Advanced: custom shift weights"):
             _d_def = st.session_state.get("schedule_day_pct") or 25
@@ -571,7 +572,7 @@ with tab_params:
                     use_container_width=True,
                 ):
                     st.session_state.training_program = _PROG_MAP[_label]
-                    _cur_label = _label
+                    st.rerun()
 
     if st.session_state.training_program != "none":
         _eff_opts = ["Full reset (training = live exposure)", "Partial boost"]
@@ -781,20 +782,17 @@ with tab_training:
                 _c6.metric("Providers reached — ref run", f"{int(_tm.any(axis=1).sum()):,}",
                            help="Unique providers trained at least once (seed-0).")
 
-            # Threshold sweep — baseline vs trained
+            # Readiness CDF — baseline vs trained
             st.divider()
-            st.subheader("Providers with gap > threshold")
+            st.subheader("Readiness distribution")
             st.caption(
+                "For each readiness level on the x-axis, the curve shows what % of on-shift days "
+                "the team reached that level or higher. "
                 "Blue = exposure only · Green = with training. "
                 "Solid line = median; shaded = p10–p90 across all runs."
             )
             st.plotly_chart(
-                plot_mc_threshold_sweep(
-                    mc["pct_by_threshold"],
-                    mc["sweep_thresholds"],
-                    pct_by_threshold_t=mc.get("pct_by_threshold_t"),
-                    threshold_marker=mc["threshold"],
-                ),
+                plot_mc_readiness_cdf(mc["readiness_b"], mc["readiness_t"]),
                 use_container_width=True,
             )
 

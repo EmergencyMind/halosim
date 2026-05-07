@@ -710,3 +710,99 @@ def plot_mc_threshold_sweep(
     fig.update_xaxes(gridcolor="#E2E8F0")
     fig.update_yaxes(gridcolor="#E2E8F0")
     return fig
+
+
+# ---------------------------------------------------------------------------
+# 11. MC readiness CDF — % of days at or above each readiness level
+# ---------------------------------------------------------------------------
+
+def plot_mc_readiness_cdf(
+    readiness_b: np.ndarray,               # (n_samples, n_days), values 0-1
+    readiness_t: np.ndarray | None = None,
+    p_low: int = 10,
+    p_high: int = 90,
+) -> go.Figure:
+    """
+    Readiness CCDF: for each readiness level x (0-100%), what % of on-shift days
+    have team readiness >= x?  Blue = exposure only; green = with training.
+    """
+    levels = np.linspace(0, 100, 101)
+
+    def _ccdf_matrix(readiness: np.ndarray) -> np.ndarray:
+        r_pct = readiness * 100
+        valid_mask = ~np.isnan(r_pct)
+        valid_count = valid_mask.sum(axis=1)
+        result = np.zeros((r_pct.shape[0], len(levels)))
+        for i, lev in enumerate(levels):
+            above = (r_pct >= lev) & valid_mask
+            result[:, i] = np.where(
+                valid_count > 0,
+                above.sum(axis=1) / np.maximum(valid_count, 1) * 100,
+                np.nan,
+            )
+        return result
+
+    n_samples = readiness_b.shape[0]
+    cdf_b = _ccdf_matrix(readiness_b)
+    lo_b  = np.nanpercentile(cdf_b, p_low,  axis=0)
+    hi_b  = np.nanpercentile(cdf_b, p_high, axis=0)
+    med_b = np.nanpercentile(cdf_b, 50,     axis=0)
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=np.concatenate([levels, levels[::-1]]),
+        y=np.concatenate([hi_b, lo_b[::-1]]),
+        fill="toself",
+        fillcolor="rgba(37,99,235,0.12)",
+        line=dict(color="rgba(0,0,0,0)"),
+        name=f"Exposure only (p{p_low}-p{p_high})",
+        hoverinfo="skip",
+        showlegend=True,
+    ))
+    fig.add_trace(go.Scatter(
+        x=levels, y=med_b,
+        mode="lines",
+        name="Exposure only (median)",
+        line=dict(color=_BLUE, width=2),
+    ))
+
+    if readiness_t is not None:
+        cdf_t = _ccdf_matrix(readiness_t)
+        lo_t  = np.nanpercentile(cdf_t, p_low,  axis=0)
+        hi_t  = np.nanpercentile(cdf_t, p_high, axis=0)
+        med_t = np.nanpercentile(cdf_t, 50,     axis=0)
+
+        fig.add_trace(go.Scatter(
+            x=np.concatenate([levels, levels[::-1]]),
+            y=np.concatenate([hi_t, lo_t[::-1]]),
+            fill="toself",
+            fillcolor="rgba(22,163,74,0.12)",
+            line=dict(color="rgba(0,0,0,0)"),
+            name=f"With training (p{p_low}-p{p_high})",
+            hoverinfo="skip",
+            showlegend=True,
+        ))
+        fig.add_trace(go.Scatter(
+            x=levels, y=med_t,
+            mode="lines",
+            name="With training (median)",
+            line=dict(color=_GREEN, width=2),
+        ))
+
+    title_suffix = f"{n_samples} simulation{'s' if n_samples != 1 else ''}"
+    fig.update_layout(
+        title=f"Readiness distribution ({title_suffix})",
+        xaxis_title="On-shift readiness level (%)",
+        yaxis_title="% of on-shift days at or above level",
+        xaxis=dict(range=[0, 100], ticksuffix="%"),
+        yaxis=dict(range=[0, 105], ticksuffix="%"),
+        height=400,
+        legend=dict(x=0.55, y=0.95),
+        margin=dict(t=60, b=40),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+    )
+    fig.update_xaxes(gridcolor="#E2E8F0", zeroline=False)
+    fig.update_yaxes(gridcolor="#E2E8F0", zeroline=False)
+    return fig
