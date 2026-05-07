@@ -1,11 +1,9 @@
 """
 HaloSim — HALO Event Exposure & Training Simulation
-Streamlit app entry point
 """
 
 from __future__ import annotations
 
-import io
 from pathlib import Path
 
 import numpy as np
@@ -38,7 +36,7 @@ from halosim.viz import (
 # ---------------------------------------------------------------------------
 
 ASSETS_DIR = Path(__file__).parent / "assets"
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR   = Path(__file__).parent / "data"
 
 st.set_page_config(
     page_title="HaloSim",
@@ -57,10 +55,6 @@ st.markdown(
         padding-bottom: 0.75rem !important;
       }
       section[data-testid="stSidebar"] hr { margin: 0.5rem 0 !important; }
-      section[data-testid="stSidebar"] h3 {
-        font-size: 0.9rem !important;
-        margin-bottom: 0.25rem !important;
-      }
       [data-testid="stMetric"] {
         background: #F8FAFC;
         border: 1px solid #E2E8F0;
@@ -73,9 +67,21 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_PROG_MAP = {
+    "None (exposure only)":       "none",
+    "Monthly (every 30 days)":    "monthly",
+    "Bi-monthly (every 60 days)": "bimonthly",
+    "Quarterly (every 91 days)":  "quarterly",
+}
+_PROG_INTERVALS = {"none": 30, "monthly": 30, "bimonthly": 60, "quarterly": 91}
+_TRAINING_START = 14   # fixed offset for all programs
 
 # ---------------------------------------------------------------------------
-# Session state initialisation
+# Session state
 # ---------------------------------------------------------------------------
 
 def _init_state():
@@ -88,7 +94,6 @@ def _init_state():
         "event_rate": 0.14,
         "event_day_pct": 50,
         "events_df": None,
-        "events_warnings": [],
         "events_errors": [],
         # schedules
         "schedule_source": "Generate schedules",
@@ -97,100 +102,80 @@ def _init_state():
         "schedule_night_pct": None,
         "schedule_array": None,
         "schedule_providers": None,
-        "schedule_warnings": [],
         "schedule_errors": [],
         # readiness
         "readiness_model": "binary",
         "readiness_threshold": 90,
-        "readiness_half_life": 60,
-        "ebbinghaus_b": 0.05,
-        "step_partial": 0.5,
-        "step_t2": 180,
         # training
         "training_program": "none",
-        "training_interval": 30,
-        "training_start": 14,
         "training_effect": "full",
         "training_equivalence": 1.0,
-        "training_threshold": 0.5,
-        "join_type": "simple",
-        "complex_window": 4,
-        # MC simulation outputs
+        # MC
+        "mc_n_samples": 50,
         "mc_result": None,
         "mc_ran": False,
-        "mc_n_samples": 50,
         "_last_mc_hash": None,
-        # upload byte caches
+        # upload caches
         "events_upload_bytes": None,
         "events_upload_name": "",
         "schedule_upload_bytes": None,
         "schedule_upload_name": "",
-        # auto-run flag for demo loader
         "_auto_run": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
+    # Migrate stale values from prior versions
+    if st.session_state.training_program not in _PROG_MAP.values():
+        st.session_state.training_program = "none"
+    if st.session_state.schedule_source in ("Built-in templates", "Custom 28-day pattern"):
+        st.session_state.schedule_source = "Generate schedules"
+
 
 _init_state()
 
 
 def _sim_hash() -> str:
-    """Stable string fingerprint of simulation inputs (excludes training and n_samples)."""
     s = st.session_state
     parts = [
         s.n_days, s.n_providers, s.seed,
         s.event_source, s.event_rate, s.get("event_day_pct", 50),
-        s.schedule_source,
-        s.get("schedule_type", DEFAULT_SCHEDULE_TYPE),
+        s.schedule_source, s.get("schedule_type", DEFAULT_SCHEDULE_TYPE),
         s.get("schedule_day_pct"), s.get("schedule_night_pct"),
         len(s.events_df) if s.events_df is not None else -1,
         str(s.schedule_array.shape) if s.schedule_array is not None else "none",
-        s.readiness_model, s.readiness_threshold, s.readiness_half_life,
-        s.ebbinghaus_b, s.step_t2, s.step_partial,
+        s.readiness_model, s.readiness_threshold,
     ]
     return ":".join(str(p) for p in parts)
 
 
 def _mc_hash() -> str:
-    """Fingerprint covering all inputs including training and n_samples."""
     s = st.session_state
     return (
         _sim_hash()
         + f":{s.mc_n_samples}"
-        + f":{s.training_program}:{s.training_interval}:{s.training_start}"
-        + f":{s.training_effect}:{s.training_equivalence}:{s.training_threshold}"
+        + f":{s.training_program}:{s.training_effect}:{s.training_equivalence}"
     )
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
 def _run_sim(
     n_days, providers_tuple, schedule, events_df, seed,
-    readiness_model, readiness_threshold, readiness_half_life,
-    ebbinghaus_b, step_t2, step_partial,
+    readiness_model, readiness_threshold,
     training_program, training_interval, training_start,
-    training_effect, training_equivalence, training_threshold,
+    training_effect, training_equivalence,
 ) -> "Simulation":
-    """Run one simulation (used for the training comparison chart)."""
     sim = Simulation(
-        n_days=n_days,
-        providers=list(providers_tuple),
-        schedule=schedule,
-        events=events_df,
-        seed=seed,
+        n_days=n_days, providers=list(providers_tuple),
+        schedule=schedule, events=events_df, seed=seed,
         readiness_model=readiness_model,
         readiness_threshold_days=readiness_threshold,
-        readiness_half_life_days=readiness_half_life,
-        ebbinghaus_b=ebbinghaus_b,
-        step_t2_days=step_t2,
-        step_partial_value=step_partial,
         training_program=training_program,
         training_interval_days=training_interval,
         training_start_day=training_start,
         training_effect=training_effect,
         training_equivalence=training_equivalence,
-        training_target_threshold=training_threshold,
     )
     sim.run()
     return sim
@@ -198,141 +183,81 @@ def _run_sim(
 
 @st.cache_data(show_spinner=False, max_entries=4)
 def _run_mc(
-    n_days: int,
-    providers_tuple: tuple,
-    fixed_schedule,        # np.ndarray if uploaded, else None
-    fixed_events_df,       # pd.DataFrame if uploaded, else None
-    event_source: str,
-    event_rate: float,
-    event_day_pct: int,
-    schedule_source: str,
-    schedule_type: str,
-    schedule_day_pct,      # int or None
-    schedule_night_pct,    # int or None
-    readiness_model: str,
-    readiness_threshold: int,
-    readiness_half_life: float,
-    ebbinghaus_b: float,
-    step_t2: int,
-    step_partial: float,
-    training_program: str,
-    training_interval: int,
-    training_start: int,
-    training_effect: str,
-    training_equivalence: float,
-    training_threshold: float,
-    n_samples: int,
-    base_seed: int,
+    n_days, providers_tuple, fixed_schedule, fixed_events_df,
+    event_source, event_rate, event_day_pct,
+    schedule_source, schedule_type, schedule_day_pct, schedule_night_pct,
+    readiness_model, readiness_threshold,
+    training_program, training_interval, training_start,
+    training_effect, training_equivalence,
+    n_samples, base_seed,
 ) -> dict:
-    """
-    Run n_samples paired simulations (baseline + trained) with seeds base_seed … base_seed+n_samples-1.
-    Events and schedules are re-drawn each seed when generated; fixed when uploaded.
-    Returns a dict of aggregated arrays — no Simulation objects.
-    """
     n_providers = len(providers_tuple)
-
-    readiness_b_list: list[np.ndarray] = []
-    readiness_t_list: list[np.ndarray] = []
-    pct_exceeding_list: list[float] = []
-    median_gap_list: list[float] = []
-    median_n_events_list: list[float] = []
-    lift_list: list[float] = []
-
-    ref_results_df = None
-    ref_events_df = None
-    ref_schedule = None
-    ref_proportion_b = None
-    ref_proportion_t = None
-    ref_training_matrix = None
-
     _weights = (
         {"d": schedule_day_pct / 100,
          "n": schedule_night_pct / 100,
          "o": (100 - schedule_day_pct - schedule_night_pct) / 100}
-        if schedule_day_pct is not None and schedule_night_pct is not None
-        else None
+        if schedule_day_pct is not None and schedule_night_pct is not None else None
     )
 
+    readiness_b_list, readiness_t_list, lift_list = [], [], []
+    pct_exc_list, med_gap_list, med_nev_list = [], [], []
+    ref = {}
+
     for s in range(n_samples):
-        cur_seed = base_seed + s
+        cur = base_seed + s
 
         # Events
         if fixed_events_df is None:
-            d_pct = event_day_pct / 100
-            if event_day_pct != 50:
-                ev_s, _ = generate_events(
-                    n_days=n_days, rate=event_rate, seed=cur_seed,
-                    day_rate=event_rate * d_pct,
-                    night_rate=event_rate * (1 - d_pct),
-                )
-            else:
-                ev_s, _ = generate_events(n_days=n_days, rate=event_rate, seed=cur_seed)
+            d = event_day_pct / 100
+            kw = {"day_rate": event_rate * d, "night_rate": event_rate * (1 - d)} \
+                 if event_day_pct != 50 else {}
+            ev, _ = generate_events(n_days=n_days, rate=event_rate, seed=cur, **kw)
         else:
-            ev_s = fixed_events_df
+            ev = fixed_events_df
 
         # Schedule
         if fixed_schedule is None:
-            sched_s, _ = generate_schedule(
-                n_providers=n_providers,
-                n_days=n_days,
-                schedule_type=schedule_type,
-                seed=cur_seed,
-                weights=_weights,
+            sched, _ = generate_schedule(
+                n_providers=n_providers, n_days=n_days,
+                schedule_type=schedule_type, seed=cur, weights=_weights,
             )
         else:
-            sched_s = fixed_schedule
+            sched = fixed_schedule
 
-        # Baseline simulation
+        # Baseline
         sim_b = Simulation(
-            n_days=n_days,
-            providers=list(providers_tuple),
-            schedule=sched_s,
-            events=ev_s,
-            seed=cur_seed,
+            n_days=n_days, providers=list(providers_tuple),
+            schedule=sched, events=ev, seed=cur,
             readiness_model=readiness_model,
             readiness_threshold_days=readiness_threshold,
-            readiness_half_life_days=readiness_half_life,
-            ebbinghaus_b=ebbinghaus_b,
-            step_t2_days=step_t2,
-            step_partial_value=step_partial,
             training_program="none",
             training_interval_days=training_interval,
             training_start_day=training_start,
             training_effect=training_effect,
             training_equivalence=training_equivalence,
-            training_target_threshold=training_threshold,
         )
         sim_b.run()
 
-        # Training simulation (only if program is set)
+        # Trained
         sim_t = None
         if training_program != "none":
             sim_t = Simulation(
-                n_days=n_days,
-                providers=list(providers_tuple),
-                schedule=sched_s,
-                events=ev_s,
-                seed=cur_seed,
+                n_days=n_days, providers=list(providers_tuple),
+                schedule=sched, events=ev, seed=cur,
                 readiness_model=readiness_model,
                 readiness_threshold_days=readiness_threshold,
-                readiness_half_life_days=readiness_half_life,
-                ebbinghaus_b=ebbinghaus_b,
-                step_t2_days=step_t2,
-                step_partial_value=step_partial,
                 training_program=training_program,
                 training_interval_days=training_interval,
                 training_start_day=training_start,
                 training_effect=training_effect,
                 training_equivalence=training_equivalence,
-                training_target_threshold=training_threshold,
             )
             sim_t.run()
 
-        # Collect per-seed scalars
         readiness_b_list.append(sim_b.proportion_ready_on_shift.copy())
-        pct_exceeding_list.append(100.0 * sim_b.results_df["max_gap_exceeds_threshold"].mean())
-        median_gap_list.append(float(sim_b.results_df["gap_median"].dropna().median()))
-        median_n_events_list.append(float(sim_b.results_df["n_events"].dropna().median()))
+        pct_exc_list.append(100.0 * sim_b.results_df["max_gap_exceeds_threshold"].mean())
+        med_gap_list.append(float(sim_b.results_df["gap_median"].dropna().median()))
+        med_nev_list.append(float(sim_b.results_df["n_events"].dropna().median()))
 
         if sim_t is not None:
             readiness_t_list.append(sim_t.proportion_ready_on_shift.copy())
@@ -341,173 +266,66 @@ def _run_mc(
                  - np.nanmean(sim_b.proportion_ready_on_shift)) * 100
             )
 
-        # Keep reference run data (seed 0)
         if s == 0:
-            ref_results_df = sim_b.results_df.copy()
-            ref_events_df = sim_b.events.copy()
-            ref_schedule = sim_b.schedule.copy()
-            ref_proportion_b = sim_b.proportion_ready_on_shift.copy()
-            ref_proportion_t = sim_t.proportion_ready_on_shift.copy() if sim_t else None
-            ref_training_matrix = sim_t.training_matrix.copy() if sim_t else None
+            ref = {
+                "results_df":    sim_b.results_df.copy(),
+                "events_df":     sim_b.events.copy(),
+                "schedule":      sim_b.schedule.copy(),
+                "proportion_b":  sim_b.proportion_ready_on_shift.copy(),
+                "proportion_t":  sim_t.proportion_ready_on_shift.copy() if sim_t else None,
+                "training_mat":  sim_t.training_matrix.copy() if sim_t else None,
+            }
 
     return {
-        "readiness_b":       np.array(readiness_b_list),
-        "readiness_t":       np.array(readiness_t_list) if readiness_t_list else None,
-        "pct_exceeding":     np.array(pct_exceeding_list),
-        "median_gap":        np.array(median_gap_list),
-        "median_n_events":   np.array(median_n_events_list),
-        "lift":              np.array(lift_list) if lift_list else None,
-        "n_days":            n_days,
-        "n_samples":         n_samples,
-        "threshold":         readiness_threshold,
-        "training_program":  training_program,
-        "ref_results_df":    ref_results_df,
-        "ref_events_df":     ref_events_df,
-        "ref_schedule":      ref_schedule,
-        "ref_proportion_b":  ref_proportion_b,
-        "ref_proportion_t":  ref_proportion_t,
-        "ref_training_matrix": ref_training_matrix,
-        "providers":         list(providers_tuple),
+        "readiness_b":     np.array(readiness_b_list),
+        "readiness_t":     np.array(readiness_t_list) if readiness_t_list else None,
+        "pct_exceeding":   np.array(pct_exc_list),
+        "median_gap":      np.array(med_gap_list),
+        "median_n_events": np.array(med_nev_list),
+        "lift":            np.array(lift_list) if lift_list else None,
+        "n_days":          n_days,
+        "n_samples":       n_samples,
+        "threshold":       readiness_threshold,
+        "training_program": training_program,
+        "providers":       list(providers_tuple),
+        **{f"ref_{k}": v for k, v in ref.items()},
     }
 
 
 # ---------------------------------------------------------------------------
-# Sidebar
+# Sidebar — N runs + Run button only
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    _hdr_logo, _hdr_text = st.columns([1, 2.5])
-    with _hdr_logo:
+    _logo_col, _title_col = st.columns([1, 2.5])
+    with _logo_col:
         st.image(str(ASSETS_DIR / "logo.png"), width=56)
-    with _hdr_text:
+    with _title_col:
         st.markdown("**HaloSim**")
         st.caption("HALO Event Exposure\n& Training Simulation")
+
     st.divider()
-    st.subheader("Simulation settings")
 
-    n_days = st.selectbox(
-        "Simulation window",
-        [90, 180, 365, 730],
-        index=[90, 180, 365, 730].index(st.session_state.n_days)
-        if st.session_state.n_days in [90, 180, 365, 730] else 2,
-        format_func=lambda x: f"{x} days (~{x//365} yr)" if x >= 365 else f"{x} days (~{x//30} mo)",
+    _n_samp = st.slider(
+        "MC runs (N)",
+        min_value=1, max_value=200,
+        value=st.session_state.mc_n_samples,
+        help="Each run re-draws event timing and shift assignments from a different seed. "
+             "N=1 gives a single deterministic result.",
     )
-    st.session_state.n_days = n_days
-
-    n_providers = st.number_input(
-        "Number of providers",
-        min_value=10,
-        max_value=MAX_PROVIDERS,
-        value=st.session_state.n_providers,
-        step=10,
-    )
-    n_providers = int(n_providers)
-    st.session_state.n_providers = n_providers
-    if n_providers > WARN_PROVIDERS:
-        st.warning(f"⚠️ {n_providers:,} providers — simulation may take a few seconds.")
-
-    seed = st.number_input(
-        "Random seed",
-        min_value=0,
-        max_value=99999,
-        value=st.session_state.seed,
-        help="Set for reproducible results. MC runs use seed, seed+1, seed+2, …",
-    )
-    st.session_state.seed = int(seed)
-
-    thresh_sidebar = st.number_input(
-        "Critical threshold (days)",
-        min_value=1,
-        value=st.session_state.readiness_threshold,
-        step=1,
-        help="Maximum acceptable gap between HALO event exposures.",
-    )
-    thresh_sidebar = int(thresh_sidebar)
-    if thresh_sidebar > n_days:
-        st.error(
-            f"Threshold ({thresh_sidebar} d) exceeds the simulation window ({n_days} d)."
-        )
-        thresh_sidebar = st.session_state.readiness_threshold
+    st.session_state.mc_n_samples = _n_samp
+    if _n_samp == 1:
+        st.caption("N=1 — single seed, no distribution.")
+    elif _n_samp > 100:
+        st.caption(f"N={_n_samp} — may take 30–60 s for large configs.")
     else:
-        st.session_state.readiness_threshold = thresh_sidebar
-    st.session_state.readiness_model = "binary"
-
-    # ── Training program ───────────────────────────────────────────────────
-    st.divider()
-    st.subheader("Training program")
-
-    _prog_display_map = {
-        "None (exposure only)":       "none",
-        "Monthly (every 30 days)":    "monthly",
-        "Bi-monthly (every 60 days)": "bimonthly",
-        "Quarterly (every 91 days)":  "quarterly",
-        "Custom interval":            "custom",
-    }
-    _prog_labels = list(_prog_display_map.keys())
-    _current_label = {v: k for k, v in _prog_display_map.items()}.get(
-        st.session_state.training_program, "None (exposure only)"
-    )
-    _sel_label = st.selectbox(
-        "Program",
-        _prog_labels,
-        index=_prog_labels.index(_current_label),
-        key="training_prog_select",
-        label_visibility="collapsed",
-    )
-    _sel_prog = _prog_display_map[_sel_label]
-    st.session_state.training_program = _sel_prog
-
-    if _sel_prog == "custom":
-        _tc1, _tc2 = st.columns(2)
-        with _tc1:
-            _ti = st.slider("Interval (days)", 7, 365,
-                            st.session_state.training_interval, key="ti_custom")
-            st.session_state.training_interval = _ti
-        with _tc2:
-            _ts = st.slider("First session (day)", 0, 90,
-                            st.session_state.training_start, key="ts_custom")
-            st.session_state.training_start = _ts
-
-    if _sel_prog != "none":
-        _effect_opts = ["Full reset", "Partial boost"]
-        _eff = st.radio(
-            "Effectiveness",
-            _effect_opts,
-            horizontal=True,
-            index=0 if st.session_state.training_effect == "full" else 1,
-            key="train_effect",
-        )
-        st.session_state.training_effect = "full" if _eff == "Full reset" else "partial"
-        if st.session_state.training_effect == "partial":
-            _eq = st.slider(
-                "Equivalence factor",
-                0.1, 1.0, st.session_state.training_equivalence, 0.05,
-                help="1.0 = same as live exposure",
-                key="train_eq",
-            )
-            st.session_state.training_equivalence = _eq
-
-    # ── Run ────────────────────────────────────────────────────────────────
-    st.divider()
-
-    with st.expander("Advanced"):
-        _n_samp = st.slider(
-            "MC samples (N)",
-            min_value=1,
-            max_value=200,
-            value=st.session_state.mc_n_samples,
-            step=1,
-            help="Each sample re-draws event timing and shift assignments from a different seed.",
-        )
-        st.session_state.mc_n_samples = _n_samp
-        if _n_samp == 1:
-            st.caption("N=1 — single-seed run (fastest, no distribution).")
-        elif _n_samp > 100:
-            st.caption(f"N={_n_samp} — may take 30–60 s for 200 providers × 365 days.")
-        else:
-            st.caption(f"N={_n_samp} — seeds {int(seed)} … {int(seed) + _n_samp - 1}.")
+        st.caption(f"N={_n_samp} seeds.")
 
     run_btn = st.button("▶ Run Simulation", type="primary", use_container_width=True)
+
+    if st.session_state.mc_ran and st.session_state._last_mc_hash != _mc_hash():
+        st.warning("Settings changed — re-run to update.")
+
     st.divider()
     st.caption("Built by [Sangfroid Labs](https://sangfroidlabs.com)")
 
@@ -519,111 +337,99 @@ with st.sidebar:
 if st.session_state.mc_ran and st.session_state.mc_result is not None:
     _mc = st.session_state.mc_result
     if st.session_state._last_mc_hash == _mc_hash():
-        _n_samp_done = _mc["n_samples"]
-        _prog_label = {v: k for k, v in _prog_display_map.items()}.get(
+        _prog_label = {v: k for k, v in _PROG_MAP.items()}.get(
             _mc["training_program"], "None (exposure only)"
         )
-        _run_note = f"{_n_samp_done} MC run{'s' if _n_samp_done != 1 else ''}"
         _train_note = f" · {_prog_label}" if _mc["training_program"] != "none" else ""
         st.success(
-            f"✓ {len(_mc['providers']):,} providers × {_mc['n_days']} days"
-            f" · {_run_note}{_train_note}"
-            " — results in the tabs below."
+            f"✓  {len(_mc['providers']):,} providers × {_mc['n_days']} days"
+            f" · {_mc['n_samples']} MC run{'s' if _mc['n_samples'] != 1 else ''}"
+            f"{_train_note}"
         )
-    else:
-        st.warning("Settings changed — click **▶ Run Simulation** to update results.")
 
 
 # ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
 
-tab_start, tab_events, tab_schedules, tab_exposure, tab_training = st.tabs(
-    ["🟢 Start Here", "🔥 Events", "📅 Schedules", "📊 Exposure Analysis", "🏋️ Training Effects"]
+tab_params, tab_exposure, tab_training = st.tabs(
+    ["⚙️ Model Parameters", "📊 Exposure", "🏋️ Training"]
 )
 
-# ── Tab 0: Start Here ──────────────────────────────────────────────────────
 
-with tab_start:
-    st.header("Welcome to HaloSim")
-    st.markdown(
-        "HaloSim models how often providers encounter **high-acuity low-occurrence (HALO) events** "
-        "on shift, and simulates whether training programs can fill the readiness gaps that result "
-        "from infrequent live exposure. Based on the methodology in **PMID: 41633464**."
-    )
+# ── Tab 0: Model Parameters ────────────────────────────────────────────────
 
+with tab_params:
+
+    # ── Simulation ──────────────────────────────────────────────────────────
+    st.subheader("Simulation")
+    _p1, _p2 = st.columns(2)
+
+    with _p1:
+        n_days = st.selectbox(
+            "Window",
+            [90, 180, 365, 730],
+            index=[90, 180, 365, 730].index(st.session_state.n_days)
+            if st.session_state.n_days in [90, 180, 365, 730] else 2,
+            format_func=lambda x: f"{x} days (~{x // 365} yr)" if x >= 365
+                                   else f"{x} days (~{x // 30} mo)",
+        )
+        st.session_state.n_days = n_days
+
+        thresh = st.number_input(
+            "Critical threshold (days)",
+            min_value=1, value=st.session_state.readiness_threshold, step=1,
+            help="Maximum acceptable gap between HALO exposures. Providers beyond this are under-exposed.",
+        )
+        thresh = int(thresh)
+        if thresh > n_days:
+            st.error(f"Threshold ({thresh} d) exceeds window ({n_days} d).")
+            thresh = st.session_state.readiness_threshold
+        st.session_state.readiness_threshold = thresh
+        st.session_state.readiness_model = "binary"
+
+    with _p2:
+        n_providers = int(st.number_input(
+            "Number of providers",
+            min_value=10, max_value=MAX_PROVIDERS,
+            value=st.session_state.n_providers, step=10,
+        ))
+        st.session_state.n_providers = n_providers
+        if n_providers > WARN_PROVIDERS:
+            st.warning(f"⚠️ {n_providers:,} providers — may be slow.")
+
+        seed = int(st.number_input(
+            "Random seed", min_value=0, max_value=99999,
+            value=st.session_state.seed,
+            help="MC runs use seed, seed+1, seed+2, …",
+        ))
+        st.session_state.seed = seed
+
+    # ── HALO Events ─────────────────────────────────────────────────────────
     st.divider()
-    st.subheader("How to run a simulation")
+    st.subheader("HALO Events")
 
-    steps = [
-        ("🔧 Sidebar", "Set your **simulation window** (e.g. 365 days), **number of providers**, "
-         "**random seed**, and **critical threshold** (the maximum acceptable gap in days). "
-         "Choose a **training program** (or leave as None). "
-         "Under **Advanced**, set the number of MC samples (N=50 by default)."),
-        ("🔥 Events tab", "Choose **Generate** to draw events from a Poisson model (set events/year), "
-         "or **Upload** a CSV with columns `date` and `shift_type` (day/night)."),
-        ("📅 Schedules tab", "Choose a **schedule type** (e.g. 3/7 Day) to randomly generate "
-         "shift schedules, or **Upload** a CSV with columns `provider_id`, `date`, `shift_type`."),
-        ("▶ Run Simulation", "Click **▶ Run Simulation** in the sidebar. HaloSim runs N simulations "
-         "simultaneously — each with a different seed controlling event timing and shift assignments. "
-         "Results are shown as distributions, not single estimates."),
-        ("📊 Exposure Analysis tab", "View **gap statistics** as distributions across the N runs — "
-         "how often providers exceed the threshold, median gaps, and readiness over time."),
-        ("🏋️ Training Effects tab", "If a training program is selected, this tab shows the "
-         "distribution of training lift across all MC runs — how much readiness improves, "
-         "and how variable that improvement is."),
-    ]
-
-    for i, (label, desc) in enumerate(steps, 1):
-        c_num, c_label, c_desc = st.columns([0.35, 1.2, 4])
-        with c_num:
-            st.markdown(f"### {i}")
-        with c_label:
-            st.markdown(f"**{label}**")
-        with c_desc:
-            st.markdown(desc)
-        if i < len(steps):
-            st.markdown("<hr style='margin:0.3rem 0; border-color:#E2E8F0'>",
-                        unsafe_allow_html=True)
-
-    st.divider()
-    st.subheader("Key concepts")
-    st.markdown("""
-- **HALO event** — A high-acuity, low-occurrence event (e.g. cardiac arrest) that requires practiced skills but happens rarely enough that most providers go months between exposures.
-- **Readiness threshold** — The maximum gap (in days) before a provider is considered under-exposed. Default: 90 days.
-- **Gap** — The interval between consecutive exposures for a single provider, including lead-in and trail-out.
-- **On-shift readiness** — The proportion of providers who are *currently on shift* and within their readiness threshold. Off-shift providers are excluded.
-- **MC sampling** — Each run re-draws event timing and shift assignments from a different random seed, producing a distribution of outcomes rather than a single point estimate.
-""")
-
-# ── Tab 1: Events ──────────────────────────────────────────────────────────
-
-with tab_events:
-    st.header("HALO Event Configuration")
-
-    source_options = ["Generate (Poisson MC)", "Upload CSV / Excel"]
+    _ev_src_opts = ["Generate (Poisson MC)", "Upload CSV / Excel"]
     event_source = st.radio(
-        "Event source",
-        source_options,
-        index=source_options.index(st.session_state.event_source),
-        horizontal=True,
+        "Source", _ev_src_opts,
+        index=_ev_src_opts.index(st.session_state.event_source),
+        horizontal=True, label_visibility="collapsed",
     )
     st.session_state.event_source = event_source
 
     if event_source == "Generate (Poisson MC)":
         _lc1, _lc2 = st.columns(2)
         with _lc1:
-            if st.button("Load sample events (48 events / year)", use_container_width=True):
+            if st.button("Load sample events (48 / year)", use_container_width=True):
                 _raw = (DATA_DIR / "sample_events.csv").read_bytes()
-                _df, _errs = load_events_from_upload(_raw, "sample_events.csv", n_days)
+                _df, _ = load_events_from_upload(_raw, "sample_events.csv", n_days)
                 if _df is not None:
                     st.session_state.events_df    = _df
                     st.session_state.event_source = "Upload CSV / Excel"
-                    st.session_state.events_errors = _errs
                     st.rerun()
         with _lc2:
-            if st.button("Load full demo scenario", use_container_width=True,
-                         help="Loads sample events + sample schedule (20 providers) and runs the simulation."):
+            if st.button("Load full demo (20 providers)", use_container_width=True,
+                         help="Loads sample events + schedule and runs the simulation."):
                 _raw_ev = (DATA_DIR / "sample_events.csv").read_bytes()
                 _df_ev, _ = load_events_from_upload(_raw_ev, "sample_events.csv", 365)
                 _raw_sc = (DATA_DIR / "sample_schedule.csv").read_bytes()
@@ -641,249 +447,213 @@ with tab_events:
                     st.session_state._auto_run          = True
                     st.rerun()
 
-        st.divider()
         rate_per_year = st.slider(
-            "Event rate (events / year)",
-            min_value=1,
-            max_value=365,
-            value=round(st.session_state.event_rate * 365),
-            step=1,
+            "Event rate (events / year)", 1, 365,
+            value=round(st.session_state.event_rate * 365), step=1,
             help="~51/year matches cardiac arrest rate in PMID: 41633464",
         )
-        rate = rate_per_year / 365.0
-        st.session_state.event_rate = rate
+        st.session_state.event_rate = rate_per_year / 365.0
         st.caption(
-            f"~**{rate * 30.44:.1f} events/month** &nbsp;·&nbsp; "
-            f"{rate * n_days:.0f} expected over {n_days} days"
+            f"~**{st.session_state.event_rate * 30.44:.1f} events/month** &nbsp;·&nbsp; "
+            f"{st.session_state.event_rate * n_days:.0f} expected over {n_days} days"
         )
 
-        with st.expander("Advanced event settings"):
+        with st.expander("Advanced: day / night split"):
             day_pct = st.slider(
-                "% occurring on day shifts",
-                min_value=0, max_value=100,
-                value=st.session_state.get("event_day_pct", 50),
-                step=5,
-                help="Remaining % occurs on night shifts. Default 50/50.",
+                "% on day shifts", 0, 100,
+                value=st.session_state.get("event_day_pct", 50), step=5,
             )
             st.session_state.event_day_pct = day_pct
             st.caption(
-                f"Day rate: {rate * day_pct / 100:.3f}/day &nbsp;·&nbsp; "
-                f"Night rate: {rate * (100 - day_pct) / 100:.3f}/day"
+                f"Day: {st.session_state.event_rate * day_pct / 100:.3f}/day &nbsp;·&nbsp; "
+                f"Night: {st.session_state.event_rate * (100 - day_pct) / 100:.3f}/day"
             )
 
-    else:
-        st.caption("Expected format:")
+    else:  # Upload
+        st.caption("Required columns: `date`, `shift_type` (day / night)")
         _sample_ev = pd.DataFrame({
-            "date":       ["2024-01-03", "2024-01-11", "2024-01-19", "2024-02-01", "2024-02-14"],
-            "shift_type": ["day",        "night",       "day",        "night",      "day"],
+            "date":       ["2024-01-03", "2024-01-11", "2024-02-01"],
+            "shift_type": ["day",        "night",       "day"],
         })
         st.dataframe(_sample_ev, use_container_width=False, hide_index=True)
-        st.caption("Optional: add an `hour` column (0–23) to enable shift-boundary join (Advanced).")
 
-        uploaded = st.file_uploader("Upload events file", type=["csv", "xlsx", "xls"])
-        if uploaded is not None:
-            if uploaded.name != st.session_state.events_upload_name:
-                st.session_state.events_upload_bytes = uploaded.read()
-                st.session_state.events_upload_name  = uploaded.name
+        uploaded_ev = st.file_uploader("Upload events file", type=["csv", "xlsx", "xls"],
+                                       key="ev_upload")
+        if uploaded_ev is not None:
+            if uploaded_ev.name != st.session_state.events_upload_name:
+                st.session_state.events_upload_bytes = uploaded_ev.read()
+                st.session_state.events_upload_name  = uploaded_ev.name
                 st.session_state.events_errors       = []
                 st.session_state.events_df           = None
-            _ev_bytes = st.session_state.events_upload_bytes
-            _ev_name  = st.session_state.events_upload_name
-            df, errs = load_events_from_upload(_ev_bytes, _ev_name, n_days, allow_hour_col=False)
+            df, errs = load_events_from_upload(
+                st.session_state.events_upload_bytes,
+                st.session_state.events_upload_name,
+                n_days, allow_hour_col=False,
+            )
             st.session_state.events_errors = errs
             if df is not None:
                 st.session_state.events_df = df
         for e in st.session_state.events_errors:
             st.error(e)
         if st.session_state.events_df is not None:
-            edf = st.session_state.events_df
-            st.success(f"✓ {len(edf)} events loaded")
-            st.dataframe(edf.head(10), use_container_width=True)
+            st.success(f"✓ {len(st.session_state.events_df)} events loaded")
 
-        with st.expander("Advanced event settings"):
-            st.caption("Enable the hour column and complex shift-boundary join.")
-            allow_hour_adv = st.checkbox("File includes 'hour' column (0–23)", value=False,
-                                         key="allow_hour_adv")
-            if allow_hour_adv and st.session_state.events_upload_bytes:
-                df2, errs2 = load_events_from_upload(
-                    st.session_state.events_upload_bytes,
-                    st.session_state.events_upload_name,
-                    n_days, allow_hour_col=True,
-                )
-                if df2 is not None:
-                    st.session_state.events_df = df2
+    # ── Provider Schedules ───────────────────────────────────────────────────
+    st.divider()
+    st.subheader("Provider Schedules")
 
-            st.divider()
-            join_opts = ["simple", "complex (requires hour column)"]
-            join = st.selectbox(
-                "Exposure join type",
-                join_opts,
-                index=0 if st.session_state.join_type == "simple" else 1,
-                help="Complex join counts events within ±N hours of shift boundary.",
-            )
-            st.session_state.join_type = "simple" if join == "simple" else "complex"
-            if st.session_state.join_type == "complex":
-                win = st.slider("Window (hours)", 1, 8, st.session_state.complex_window)
-                st.session_state.complex_window = win
-                if st.session_state.events_df is not None and \
-                   "hour" not in st.session_state.events_df.columns:
-                    st.warning("Complex join requires an 'hour' column. Falling back to simple join.")
-
-
-# ── Tab 2: Schedules ───────────────────────────────────────────────────────
-
-with tab_schedules:
-    st.header("Provider Schedule Configuration")
-
-    sched_options = ["Generate schedules", "Upload CSV / Excel"]
-
-    if st.session_state.schedule_source in ("Built-in templates", "Custom 28-day pattern"):
-        st.session_state.schedule_source = "Generate schedules"
-
+    _sc_src_opts = ["Generate schedules", "Upload CSV / Excel"]
     sched_source = st.radio(
-        "Schedule source",
-        sched_options,
+        "Source", _sc_src_opts,
         index=min(
-            sched_options.index(st.session_state.schedule_source)
-            if st.session_state.schedule_source in sched_options else 0,
-            len(sched_options) - 1,
+            _sc_src_opts.index(st.session_state.schedule_source)
+            if st.session_state.schedule_source in _sc_src_opts else 0,
+            len(_sc_src_opts) - 1,
         ),
-        horizontal=True,
+        horizontal=True, label_visibility="collapsed",
     )
     st.session_state.schedule_source = sched_source
 
     if sched_source == "Generate schedules":
-        _type_descriptions = {
-            "3/7 Day":   "3 randomly placed day shifts per 7-day week, rest off",
-            "3/7 Night": "3 randomly placed night shifts per 7-day week, rest off",
-            "4/7 Day":   "4 randomly placed day shifts per 7-day week, rest off",
-            "4/7 Night": "4 randomly placed night shifts per 7-day week, rest off",
-            "Progressive (day & night mix)":
-                "3-4 shifts per week, each randomly assigned day or night",
-            "Random":    "Each day drawn from empirical d/n/o weights (PMID: 41633464: 25% day, 23% night, 52% off)",
+        _type_captions = {
+            "3/7 Day":   "3 day shifts per week, rest off",
+            "3/7 Night": "3 night shifts per week, rest off",
+            "4/7 Day":   "4 day shifts per week, rest off",
+            "4/7 Night": "4 night shifts per week, rest off",
+            "Progressive (day & night mix)": "3–4 shifts/week, mix of day and night",
+            "Random":    "Each day drawn from empirical weights (25% day, 23% night, 52% off)",
         }
-        current_type = st.session_state.get("schedule_type", DEFAULT_SCHEDULE_TYPE)
-        if current_type not in SCHEDULE_TYPES:
-            current_type = DEFAULT_SCHEDULE_TYPE
-
-        selected_type = st.radio(
-            "Schedule type",
-            SCHEDULE_TYPES,
-            index=SCHEDULE_TYPES.index(current_type),
-            captions=list(_type_descriptions.values()),
+        cur_type = st.session_state.get("schedule_type", DEFAULT_SCHEDULE_TYPE)
+        if cur_type not in SCHEDULE_TYPES:
+            cur_type = DEFAULT_SCHEDULE_TYPE
+        sel_type = st.radio(
+            "Schedule type", SCHEDULE_TYPES,
+            index=SCHEDULE_TYPES.index(cur_type),
+            captions=list(_type_captions.values()),
         )
-        st.session_state.schedule_type = selected_type
+        st.session_state.schedule_type = sel_type
 
-        with st.expander("Advanced schedule settings"):
-            st.caption(
-                "Override with a custom shift distribution. Each provider gets a "
-                "randomly generated schedule drawn from these percentages."
-            )
-            _d_default = st.session_state.get("schedule_day_pct") or 25
-            _n_default = st.session_state.get("schedule_night_pct") or 23
-            _d_pct = st.slider("% day shifts", 0, 100, _d_default, 5, key="sched_day_pct")
-            _n_max = 100 - _d_pct
-            if _n_max > 0:
-                _n_pct = st.slider("% night shifts", 0, _n_max,
-                                   min(_n_default, _n_max), 5, key="sched_night_pct")
-            else:
-                _n_pct = 0
-                st.caption("Night: 0% (day shifts at 100%)")
-            _o_pct = 100 - _d_pct - _n_pct
-            st.caption(f"Day: {_d_pct}% &nbsp;·&nbsp; Night: {_n_pct}% &nbsp;·&nbsp; Off: {_o_pct}%")
-            _use_custom = st.checkbox(
-                "Use these percentages (overrides schedule type above)",
-                value=(st.session_state.get("schedule_day_pct") is not None),
-                key="use_custom_sched_weights",
-            )
-            if _use_custom:
-                st.session_state.schedule_day_pct = _d_pct
-                st.session_state.schedule_night_pct = _n_pct
+        with st.expander("Advanced: custom shift weights"):
+            _d_def = st.session_state.get("schedule_day_pct") or 25
+            _n_def = st.session_state.get("schedule_night_pct") or 23
+            _d = st.slider("% day shifts", 0, 100, _d_def, 5, key="sc_d")
+            _n_max = 100 - _d
+            _n = st.slider("% night shifts", 0, _n_max, min(_n_def, _n_max), 5, key="sc_n") \
+                 if _n_max > 0 else 0
+            st.caption(f"Day {_d}% · Night {_n}% · Off {100 - _d - _n}%")
+            if st.checkbox("Use these weights (overrides schedule type)",
+                           value=(st.session_state.get("schedule_day_pct") is not None),
+                           key="use_custom_wts"):
+                st.session_state.schedule_day_pct = _d
+                st.session_state.schedule_night_pct = _n
             else:
                 st.session_state.schedule_day_pct = None
                 st.session_state.schedule_night_pct = None
 
-    elif sched_source == "Upload CSV / Excel":
-        st.caption("Expected format:")
-        _sample_sched = pd.DataFrame({
-            "provider_id": ["P0001", "P0001", "P0001", "P0002", "P0002"],
-            "date":        ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-01", "2024-01-02"],
-            "shift_type":  ["day",        "off",         "night",      "night",      "off"],
+    else:  # Upload schedule
+        st.caption("Required columns: `provider_id`, `date`, `shift_type` (day / night / off)")
+        _sample_sc = pd.DataFrame({
+            "provider_id": ["P0001", "P0001", "P0002"],
+            "date":        ["2024-01-01", "2024-01-02", "2024-01-01"],
+            "shift_type":  ["day",        "off",         "night"],
         })
-        st.dataframe(_sample_sched, use_container_width=False, hide_index=True)
-        st.caption("One row per provider per day. `shift_type`: day / night / off (or d / n / o).")
+        st.dataframe(_sample_sc, use_container_width=False, hide_index=True)
 
-        uploaded_s = st.file_uploader(
-            "Upload schedule file",
-            type=["csv", "xlsx", "xls"],
-            key="schedule_upload",
-        )
-        if uploaded_s is not None:
-            if uploaded_s.name != st.session_state.schedule_upload_name:
-                st.session_state.schedule_upload_bytes = uploaded_s.read()
-                st.session_state.schedule_upload_name  = uploaded_s.name
+        uploaded_sc = st.file_uploader("Upload schedule file", type=["csv", "xlsx", "xls"],
+                                       key="sc_upload")
+        if uploaded_sc is not None:
+            if uploaded_sc.name != st.session_state.schedule_upload_name:
+                st.session_state.schedule_upload_bytes = uploaded_sc.read()
+                st.session_state.schedule_upload_name  = uploaded_sc.name
                 st.session_state.schedule_errors       = []
                 st.session_state.schedule_array        = None
                 st.session_state.schedule_providers    = None
-            _sc_bytes = st.session_state.schedule_upload_bytes
-            _sc_name  = st.session_state.schedule_upload_name
-            arr, providers, errs = load_schedule_from_upload(_sc_bytes, _sc_name, n_days)
+            arr, provs, errs = load_schedule_from_upload(
+                st.session_state.schedule_upload_bytes,
+                st.session_state.schedule_upload_name,
+                n_days,
+            )
             st.session_state.schedule_errors = errs
             if arr is not None:
-                st.session_state.schedule_array = arr
-                st.session_state.schedule_providers = providers
-
+                st.session_state.schedule_array    = arr
+                st.session_state.schedule_providers = provs
         for e in st.session_state.schedule_errors:
-            if e.startswith("Warning:"):
-                st.warning(e)
-            else:
-                st.error(e)
+            st.warning(e) if e.startswith("Warning:") else st.error(e)
         if st.session_state.schedule_array is not None:
-            arr = st.session_state.schedule_array
-            st.success(
-                f"✓ Schedule loaded: {arr.shape[0]} providers × {arr.shape[1]} days"
-            )
+            _a = st.session_state.schedule_array
+            st.success(f"✓ Schedule: {_a.shape[0]} providers × {_a.shape[1]} days")
 
-        st.divider()
         with st.expander("Use pre-built sample schedule"):
             if st.button("Load sample_schedule.csv (20 providers)"):
                 raw = (DATA_DIR / "sample_schedule.csv").read_bytes()
-                arr, providers, errs = load_schedule_from_upload(
-                    raw, "sample_schedule.csv", n_days
-                )
+                arr, provs, _ = load_schedule_from_upload(raw, "sample_schedule.csv", n_days)
                 if arr is not None:
-                    st.session_state.schedule_array = arr
-                    st.session_state.schedule_providers = providers
+                    st.session_state.schedule_array    = arr
+                    st.session_state.schedule_providers = provs
                     st.rerun()
 
+    # ── Training Program ─────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("Training Program")
+    st.caption("Optional. Select a program to compare trained vs. untrained readiness.")
 
-# ── Tab 3: Exposure Analysis ───────────────────────────────────────────────
+    _prog_labels = list(_PROG_MAP.keys())
+    _cur_label = {v: k for k, v in _PROG_MAP.items()}.get(
+        st.session_state.training_program, "None (exposure only)"
+    )
+    _sel_label = st.selectbox(
+        "Program", _prog_labels,
+        index=_prog_labels.index(_cur_label),
+        label_visibility="collapsed",
+    )
+    st.session_state.training_program = _PROG_MAP[_sel_label]
+
+    if st.session_state.training_program != "none":
+        _eff_opts = ["Full reset (training = live exposure)", "Partial boost"]
+        _eff = st.radio(
+            "Effectiveness", _eff_opts, horizontal=True,
+            index=0 if st.session_state.training_effect == "full" else 1,
+        )
+        st.session_state.training_effect = "full" if _eff == _eff_opts[0] else "partial"
+        if st.session_state.training_effect == "partial":
+            _eq = st.slider(
+                "Equivalence factor (1.0 = same as live exposure)",
+                0.1, 1.0, st.session_state.training_equivalence, 0.05,
+            )
+            st.session_state.training_equivalence = _eq
+
+        _interval = _PROG_INTERVALS[st.session_state.training_program]
+        st.caption(
+            f"Sessions every **{_interval} days**, first on day **{_TRAINING_START}**. "
+            f"~{365 / _interval:.1f} sessions per year."
+        )
+
+
+# ── Tab 1: Exposure ────────────────────────────────────────────────────────
 
 with tab_exposure:
     st.header("Exposure Analysis")
 
     if not st.session_state.mc_ran or st.session_state.mc_result is None:
-        st.info("Configure Events and Schedules above, then click **▶ Run Simulation** in the sidebar.")
+        st.info(
+            "Set your parameters in **⚙️ Model Parameters**, set N in the sidebar, "
+            "then click **▶ Run Simulation**."
+        )
     else:
-        mc = st.session_state.mc_result
-        rdf = mc["ref_results_df"]
+        mc    = st.session_state.mc_result
+        rdf   = mc["ref_results_df"]
         thresh = mc["threshold"]
         n_samp = mc["n_samples"]
-        n = len(rdf)
 
-        # Both sources uploaded → identical runs
-        _both_fixed = (
-            st.session_state.event_source == "Upload CSV / Excel"
-            and st.session_state.schedule_source == "Upload CSV / Excel"
-        )
-        if _both_fixed and n_samp > 1:
+        if (st.session_state.event_source == "Upload CSV / Excel"
+                and st.session_state.schedule_source == "Upload CSV / Excel"
+                and n_samp > 1):
             st.warning(
                 "Both events and schedule are uploaded — all MC runs are identical. "
-                "Results are a point estimate, not a distribution."
+                "Switch at least one source to Generate to produce a true distribution."
             )
 
-        # Summary metrics (distributions across seeds)
-        st.subheader("Key metrics across MC runs")
+        # Key metrics
         _pct = mc["pct_exceeding"]
         _gap = mc["median_gap"]
         _nev = mc["median_n_events"]
@@ -892,46 +662,41 @@ with tab_exposure:
         c1.metric(
             f"% exceeding {thresh}-day threshold",
             f"{np.median(_pct):.1f}%",
-            help=f"Median across {n_samp} runs. Range (p10–p90): {np.percentile(_pct, 10):.1f}–{np.percentile(_pct, 90):.1f}%",
+            help=f"p10–p90: {np.percentile(_pct,10):.1f}–{np.percentile(_pct,90):.1f}%",
         )
         c2.metric(
-            "Median gap between exposures",
+            "Median inter-exposure gap",
             f"{np.median(_gap):.0f} days",
-            help=f"Median across {n_samp} runs. Range (p10–p90): {np.percentile(_gap, 10):.0f}–{np.percentile(_gap, 90):.0f} days",
+            help=f"p10–p90: {np.percentile(_gap,10):.0f}–{np.percentile(_gap,90):.0f} days",
         )
         c3.metric(
-            "Median exposures per provider",
+            "Median exposures / provider",
             f"{np.median(_nev):.1f}",
-            help=f"Median across {n_samp} runs. Range (p10–p90): {np.percentile(_nev, 10):.1f}–{np.percentile(_nev, 90):.1f}",
+            help=f"p10–p90: {np.percentile(_nev,10):.1f}–{np.percentile(_nev,90):.1f}",
         )
 
         # Summary table
         st.divider()
-        st.subheader("Distribution summary")
         st.dataframe(build_mc_summary_df(mc), use_container_width=True, hide_index=True)
 
-        # Readiness band chart
+        # Readiness band
         st.divider()
         st.subheader("On-shift readiness over time")
         st.caption(
-            "Shaded ribbon = p10–p90 across MC runs. "
-            "Solid line = median. "
-            "Providers currently off-shift are excluded."
+            "Shaded band = p10–p90 across all runs. Solid line = median. "
+            "Off-shift providers excluded."
         )
-        _roll = st.slider(
-            "Rolling mean window (days)",
-            1, 90, st.session_state.get("_roll_window_exp", 30),
-            key="roll_exp",
-        )
-        st.session_state["_roll_window_exp"] = _roll
+        _roll_e = st.slider("Rolling mean (days)", 1, 90,
+                            st.session_state.get("_roll_e", 30), key="roll_e")
+        st.session_state["_roll_e"] = _roll_e
         st.plotly_chart(
-            plot_mc_readiness_band(mc["readiness_b"], rolling_days=_roll),
+            plot_mc_readiness_band(mc["readiness_b"], rolling_days=_roll_e),
             use_container_width=True,
         )
 
-        # Distribution histograms
+        # Histograms
         st.divider()
-        st.subheader("Distribution across MC runs")
+        st.subheader("Distribution across runs")
         _h1, _h2, _h3 = st.columns(3)
         with _h1:
             st.plotly_chart(
@@ -949,177 +714,103 @@ with tab_exposure:
                 use_container_width=True,
             )
 
-        # Reference-run charts (seed-0 single realisation)
+        # Reference-run detail
         st.divider()
-        st.subheader("Reference run detail (seed-0 realisation)")
+        st.subheader("Within-run detail (reference run, seed 0)")
         st.caption(
-            "The charts below are from the reference run (seed 0). "
-            "They show the distributional structure within a single realisation — "
-            "the distribution charts above show how this varies across realizations."
+            "These charts show the within-population structure for one realisation. "
+            "The distributions above show how these summary values vary across runs."
         )
         st.plotly_chart(plot_exposure_count_histogram(rdf), use_container_width=True)
         st.plotly_chart(plot_gap_distribution(rdf), use_container_width=True)
         st.plotly_chart(plot_threshold_sweep(rdf, threshold=thresh), use_container_width=True)
 
-        _pct_t = 100 * (rdf["gap_max"].fillna(9999) > thresh).mean()
+        _pct_ref = 100 * (rdf["gap_max"].fillna(9999) > thresh).mean()
         st.info(
-            f"Reference run: **{_pct_t:.0f}%** of providers exceeded the {thresh}-day threshold. "
-            f"Across all {n_samp} runs: {np.median(_pct):.0f}% (p10–p90: "
-            f"{np.percentile(_pct, 10):.0f}–{np.percentile(_pct, 90):.0f}%)."
+            f"Reference run: **{_pct_ref:.0f}%** exceeded the threshold. "
+            f"Across {n_samp} runs: median {np.median(_pct):.0f}% "
+            f"(p10–p90: {np.percentile(_pct,10):.0f}–{np.percentile(_pct,90):.0f}%)."
         )
 
         # Downloads
         st.divider()
         st.subheader("Downloads")
-        _dl1, _dl2, _dl3 = st.columns(3)
-
-        with _dl1:
-            _rdf_rounded = rdf.copy()
-            if "gap_mean" in _rdf_rounded.columns:
-                _rdf_rounded["gap_mean"] = _rdf_rounded["gap_mean"].round(3)
+        _d1, _d2, _d3 = st.columns(3)
+        with _d1:
+            _rdf2 = rdf.copy()
+            if "gap_mean" in _rdf2.columns:
+                _rdf2["gap_mean"] = _rdf2["gap_mean"].round(3)
             st.download_button(
-                "📥 Exposure stats — ref run (CSV)",
-                data=_rdf_rounded.to_csv(index=False).encode(),
-                file_name="halosim_exposure_results.csv",
-                mime="text/csv",
+                "📥 Exposure stats — ref run",
+                data=_rdf2.to_csv(index=False).encode(),
+                file_name="halosim_exposure.csv", mime="text/csv",
                 use_container_width=True,
             )
-
-        with _dl2:
+        with _d2:
             _ev_dl = mc["ref_events_df"][["day_idx", "shift_type"]].copy()
             if "date" in mc["ref_events_df"].columns:
                 _ev_dl.insert(0, "date", mc["ref_events_df"]["date"])
             st.download_button(
-                "📥 Events — ref run (CSV)",
+                "📥 Events — ref run",
                 data=_ev_dl.to_csv(index=False).encode(),
-                file_name="halosim_events.csv",
-                mime="text/csv",
+                file_name="halosim_events.csv", mime="text/csv",
                 use_container_width=True,
             )
-
-        with _dl3:
-            # MC scalar results CSV
+        with _d3:
             _mc_dl = pd.DataFrame({
-                "seed": [int(seed) + s for s in range(n_samp)],
+                "seed":                   [int(seed) + s for s in range(n_samp)],
                 "pct_exceeding_threshold": mc["pct_exceeding"].round(2),
-                "median_gap_days": mc["median_gap"].round(1),
-                "median_n_events": mc["median_n_events"].round(1),
+                "median_gap_days":         mc["median_gap"].round(1),
+                "median_n_events":         mc["median_n_events"].round(1),
             })
             if mc["lift"] is not None:
                 _mc_dl["training_lift_pp"] = mc["lift"].round(2)
             st.download_button(
-                "📥 MC scalar results (CSV)",
+                "📥 MC scalar results",
                 data=_mc_dl.to_csv(index=False).encode(),
-                file_name="halosim_mc_results.csv",
-                mime="text/csv",
+                file_name="halosim_mc.csv", mime="text/csv",
                 use_container_width=True,
             )
 
-        # Simulated events detail
+        # Simulated data expanders
         with st.expander("View simulated events (reference run)"):
             _ev = mc["ref_events_df"]
-            _n_ev = len(_ev)
-            _n_day_ev = int((_ev["shift_type"] == "day").sum())
-            _n_night_ev = int((_ev["shift_type"] == "night").sum())
-            _expected = round(st.session_state.event_rate * mc["n_days"])
-
-            ec1, ec2, ec3 = st.columns(3)
+            _ne = len(_ev)
+            _nd = int((_ev["shift_type"] == "day").sum())
+            _nn = int((_ev["shift_type"] == "night").sum())
+            _exp = round(st.session_state.event_rate * mc["n_days"])
+            e1, e2, e3 = st.columns(3)
             if st.session_state.event_source == "Generate (Poisson MC)":
-                ec1.metric("Total events (seed-0)", _n_ev,
-                           delta=f"{_n_ev - _expected:+d} vs expected {_expected}",
-                           delta_color="off")
+                e1.metric("Events (seed-0)", _ne, delta=f"{_ne-_exp:+d} vs {_exp} expected",
+                          delta_color="off")
             else:
-                ec1.metric("Total events (uploaded)", _n_ev)
-            ec2.metric("Day shift", f"{_n_day_ev}  ({100*_n_day_ev//_n_ev if _n_ev else 0}%)")
-            ec3.metric("Night shift", f"{_n_night_ev}  ({100*_n_night_ev//_n_ev if _n_ev else 0}%)")
-
-            _ev2 = _ev.copy()
-            _ev2["month"] = (_ev2["day_idx"] // 30).clip(upper=max(0, mc["n_days"] // 30 - 1))
-            _monthly_day = _ev2[_ev2["shift_type"] == "day"].groupby("month").size().reset_index(name="count")
-            _monthly_ngt = _ev2[_ev2["shift_type"] == "night"].groupby("month").size().reset_index(name="count")
-            _all_months = list(range(mc["n_days"] // 30))
-            _labels = [f"Mo {m+1}" for m in _all_months]
-            _day_counts = [int(_monthly_day.set_index("month")["count"].get(m, 0)) for m in _all_months]
-            _ngt_counts = [int(_monthly_ngt.set_index("month")["count"].get(m, 0)) for m in _all_months]
-            import plotly.graph_objects as _go
-            _fig_ev = _go.Figure([
-                _go.Bar(x=_labels, y=_day_counts, name="Day", marker_color="#F59E0B", opacity=0.85),
-                _go.Bar(x=_labels, y=_ngt_counts, name="Night", marker_color="#2563EB", opacity=0.85),
-            ])
-            _fig_ev.update_layout(
-                title="Events per month (reference run)",
-                barmode="stack",
-                height=260, margin=dict(t=40, b=20, l=30, r=10),
-                plot_bgcolor="white", paper_bgcolor="white",
-                legend=dict(orientation="h", x=0.01, y=1.12),
-            )
-            _fig_ev.update_xaxes(gridcolor="#E2E8F0")
-            _fig_ev.update_yaxes(gridcolor="#E2E8F0", title="Events")
-            st.plotly_chart(_fig_ev, use_container_width=True)
+                e1.metric("Events (uploaded)", _ne)
+            e2.metric("Day", f"{_nd} ({100*_nd//_ne if _ne else 0}%)")
+            e3.metric("Night", f"{_nn} ({100*_nn//_ne if _ne else 0}%)")
 
         with st.expander("View simulated schedules (reference run)"):
-            _sched = mc["ref_schedule"]
-            _provs = mc["providers"]
-            _n_p, _n_d = _sched.shape
-            _day_ct = (_sched == "d").sum(axis=1)
-            _ngt_ct = (_sched == "n").sum(axis=1)
-            _off_ct = (_sched == "o").sum(axis=1)
-
-            sc1, sc2, sc3 = st.columns(3)
-            sc1.metric("Avg day shifts / provider",
-                       f"{_day_ct.mean():.1f}  ({100*_day_ct.mean()/_n_d:.0f}%)")
-            sc2.metric("Avg night shifts / provider",
-                       f"{_ngt_ct.mean():.1f}  ({100*_ngt_ct.mean()/_n_d:.0f}%)")
-            sc3.metric("Avg days off / provider",
-                       f"{_off_ct.mean():.1f}  ({100*_off_ct.mean()/_n_d:.0f}%)")
-
-            _rng_s = np.random.default_rng(int(seed))
-            _s_idx = np.sort(_rng_s.choice(_n_p, size=min(10, _n_p), replace=False))
-            _show_days = min(42, _n_d)
-            _n_weeks = _show_days // 7
-            _submat = _sched[np.ix_(_s_idx, np.arange(_show_days))]
-            _enc = np.where(_submat == "d", 2, np.where(_submat == "n", 1, 0)).astype(float)
-            _plabels = [_provs[i] for i in _s_idx]
-            _n_samp_s = len(_s_idx)
-
-            _fig_sched = _go.Figure(_go.Heatmap(
-                z=_enc,
-                x=list(range(1, _show_days + 1)),
-                y=_plabels,
-                colorscale=[[0, "#F1F5F9"], [0.5, "#2563EB"], [1.0, "#F59E0B"]],
-                showscale=True,
-                colorbar=dict(
-                    tickvals=[0.33, 1.0, 1.67],
-                    ticktext=["Off", "Night", "Day"],
-                    thickness=12, len=0.6,
-                ),
-                zmin=0, zmax=2,
-                xgap=1, ygap=2,
-            ))
-            for _wk in range(1, _n_weeks):
-                _fig_sched.add_vline(
-                    x=_wk * 7 + 0.5,
-                    line_width=2, line_color="#334155", line_dash="solid",
-                )
-            _fig_sched.update_layout(
-                title=f"Shift pattern — first {_n_weeks} weeks, sample of {_n_samp_s} providers (reference run)",
-                height=max(280, _n_samp_s * 28),
-                margin=dict(t=50, b=30, l=80, r=60),
-                xaxis=dict(title="Day", tickmode="array",
-                           tickvals=[w * 7 + 4 for w in range(_n_weeks)],
-                           ticktext=[f"Wk {w+1}" for w in range(_n_weeks)]),
-                plot_bgcolor="white", paper_bgcolor="white",
-            )
-            st.plotly_chart(_fig_sched, use_container_width=True)
+            _sch = mc["ref_schedule"]
+            _prv = mc["providers"]
+            _np2, _nd2 = _sch.shape
+            s1, s2, s3 = st.columns(3)
+            _dc = (_sch == "d").sum(axis=1)
+            _nc = (_sch == "n").sum(axis=1)
+            _oc = (_sch == "o").sum(axis=1)
+            s1.metric("Avg day shifts / provider", f"{_dc.mean():.1f} ({100*_dc.mean()/_nd2:.0f}%)")
+            s2.metric("Avg night shifts / provider", f"{_nc.mean():.1f} ({100*_nc.mean()/_nd2:.0f}%)")
+            s3.metric("Avg days off / provider", f"{_oc.mean():.1f} ({100*_oc.mean()/_nd2:.0f}%)")
 
 
-# ── Tab 4: Training Effects ────────────────────────────────────────────────
+# ── Tab 2: Training Effects ────────────────────────────────────────────────
 
 with tab_training:
     st.header("Training Effects")
 
     if not st.session_state.mc_ran or st.session_state.mc_result is None:
-        st.info("Configure Events and Schedules above, then click **▶ Run Simulation** in the sidebar.")
+        st.info(
+            "Set your parameters in **⚙️ Model Parameters**, set N in the sidebar, "
+            "then click **▶ Run Simulation**."
+        )
     else:
         mc = st.session_state.mc_result
         n_samp = mc["n_samples"]
@@ -1127,221 +818,184 @@ with tab_training:
         if mc["training_program"] == "none":
             st.info(
                 "No training program selected. "
-                "Choose a program in the sidebar and click **▶ Run Simulation** to see training effects."
+                "Go to **⚙️ Model Parameters → Training Program** and choose a program, "
+                "then re-run."
             )
         else:
-            _prog_label = {v: k for k, v in _prog_display_map.items()}.get(
+            _prog_label = {v: k for k, v in _PROG_MAP.items()}.get(
                 mc["training_program"], mc["training_program"]
             )
 
-            # Key metrics
-            _b_means = np.array([np.nanmean(row) * 100 for row in mc["readiness_b"]])
-            _t_means = np.array([np.nanmean(row) * 100 for row in mc["readiness_t"]])
+            # Compute per-seed summaries
+            _b_means = np.array([np.nanmean(r) * 100 for r in mc["readiness_b"]])
+            _t_means = np.array([np.nanmean(r) * 100 for r in mc["readiness_t"]])
             _lifts   = mc["lift"]
-            _days_b  = np.array([(row < 0.80).sum() for row in mc["readiness_b"]])
-            _days_t  = np.array([(row < 0.80).sum() for row in mc["readiness_t"]])
+            _days_b  = np.array([(r < 0.80).sum() for r in mc["readiness_b"]])
+            _days_t  = np.array([(r < 0.80).sum() for r in mc["readiness_t"]])
 
             c1, c2, c3, c4 = st.columns(4)
             c1.metric(
-                "Median readiness — no training",
+                "Readiness — no training",
                 f"{np.median(_b_means):.1f}%",
-                help=f"p10–p90: {np.percentile(_b_means, 10):.1f}–{np.percentile(_b_means, 90):.1f}%",
+                help=f"p10–p90: {np.percentile(_b_means,10):.1f}–{np.percentile(_b_means,90):.1f}%",
             )
             c2.metric(
-                "Median readiness — with training",
+                "Readiness — with training",
                 f"{np.median(_t_means):.1f}%",
                 delta=f"{np.median(_lifts):+.1f} pp",
-                help=f"p10–p90: {np.percentile(_t_means, 10):.1f}–{np.percentile(_t_means, 90):.1f}%",
+                help=f"p10–p90: {np.percentile(_t_means,10):.1f}–{np.percentile(_t_means,90):.1f}%",
             )
             c3.metric(
-                "Days readiness <80% — no training",
+                "Days <80% — no training",
                 f"{np.median(_days_b):.0f}",
-                help=f"Median across {n_samp} runs (p10–p90: {np.percentile(_days_b, 10):.0f}–{np.percentile(_days_b, 90):.0f})",
+                help=f"p10–p90: {np.percentile(_days_b,10):.0f}–{np.percentile(_days_b,90):.0f}",
             )
             c4.metric(
-                "Days readiness <80% — with training",
+                "Days <80% — with training",
                 f"{np.median(_days_t):.0f}",
-                delta=f"{np.median(_days_t) - np.median(_days_b):+.0f} days",
+                delta=f"{np.median(_days_t)-np.median(_days_b):+.0f} days",
                 delta_color="inverse",
-                help=f"Median across {n_samp} runs (p10–p90: {np.percentile(_days_t, 10):.0f}–{np.percentile(_days_t, 90):.0f})",
+                help=f"p10–p90: {np.percentile(_days_t,10):.0f}–{np.percentile(_days_t,90):.0f}",
             )
 
-            # Reference run training stats
-            if mc["ref_training_matrix"] is not None:
-                _tm = mc["ref_training_matrix"]
-                _n_sess = int(_tm.any(axis=0).sum())
-                _n_reached = int(_tm.any(axis=1).sum())
+            if mc["ref_training_mat"] is not None:
+                _tm = mc["ref_training_mat"]
                 _c5, _c6, _, _ = st.columns(4)
-                _c5.metric("Training sessions — ref run", f"{_n_sess:,}",
-                           help="Days with at least one provider trained (reference run, seed 0).")
-                _c6.metric("Providers reached — ref run", f"{_n_reached:,}",
-                           help="Unique providers trained at least once (reference run, seed 0).")
-
-            st.divider()
+                _c5.metric("Sessions — ref run", f"{int(_tm.any(axis=0).sum()):,}",
+                           help="Days with at least one provider trained (seed-0).")
+                _c6.metric("Providers reached — ref run", f"{int(_tm.any(axis=1).sum()):,}",
+                           help="Unique providers trained at least once (seed-0).")
 
             # Readiness band chart
-            _roll = st.slider(
-                "Rolling mean window (days)",
-                1, 90, st.session_state.get("_roll_window", 30),
-                key="roll_window",
-            )
-            st.session_state["_roll_window"] = _roll
-
+            st.divider()
+            _roll_t = st.slider("Rolling mean (days)", 1, 90,
+                                st.session_state.get("_roll_t", 30), key="roll_t")
+            st.session_state["_roll_t"] = _roll_t
             st.plotly_chart(
-                plot_mc_readiness_band(
-                    mc["readiness_b"], mc["readiness_t"],
-                    rolling_days=_roll,
-                ),
+                plot_mc_readiness_band(mc["readiness_b"], mc["readiness_t"],
+                                       rolling_days=_roll_t),
                 use_container_width=True,
             )
 
-            # Lift distribution histogram
+            # Lift histogram
             st.plotly_chart(
                 plot_mc_histogram(_lifts, "Training lift", unit=" pp"),
                 use_container_width=True,
             )
 
             # Interpretation
-            _med_lift = float(np.median(_lifts))
-            _p10_lift = float(np.percentile(_lifts, 10))
-            _p90_lift = float(np.percentile(_lifts, 90))
-            if abs(_med_lift) < 1:
-                _t_interp = (
-                    f"Training had minimal effect on median readiness across {n_samp} runs — "
-                    "live exposure alone may be sufficient at this event rate."
+            _med = float(np.median(_lifts))
+            _p10 = float(np.percentile(_lifts, 10))
+            _p90 = float(np.percentile(_lifts, 90))
+            if abs(_med) < 1:
+                _interp = (
+                    f"**{_prog_label}** had minimal effect on median readiness across "
+                    f"{n_samp} runs — live exposure alone may be sufficient at this event rate."
                 )
-            elif _med_lift > 0:
-                _t_interp = (
-                    f"**{_prog_label}** raised median on-shift readiness by "
-                    f"**{_med_lift:+.1f} pp** across {n_samp} MC runs "
-                    f"(p10–p90: {_p10_lift:+.1f} to {_p90_lift:+.1f} pp). "
-                    f"The width of this interval reflects how much the training benefit depends "
-                    "on event timing and shift assignments."
+            elif _med > 0:
+                _interp = (
+                    f"**{_prog_label}** raised median readiness by **{_med:+.1f} pp** "
+                    f"(p10–p90: {_p10:+.1f} to {_p90:+.1f} pp) across {n_samp} runs. "
+                    f"The width of this range reflects how much the benefit depends on "
+                    "when events happen to fall relative to training sessions."
                 )
             else:
-                _t_interp = (
-                    f"Median readiness with training is similar to baseline "
-                    f"({_med_lift:+.1f} pp). Consider adjusting training frequency."
+                _interp = (
+                    f"Median readiness with training is similar to baseline ({_med:+.1f} pp). "
+                    "Consider increasing training frequency."
                 )
-            st.info(_t_interp)
+            st.info(_interp)
 
+            # Program comparison (reference run)
             st.divider()
+            st.subheader("Program comparison (reference run)")
+            st.caption(
+                "Overlay multiple programs using the reference run schedule and events. "
+                "Vertical lines mark training days."
+            )
 
-            # Training program comparison (single-seed, uses _run_sim)
-            _compare_options = {
+            _cmp_opts = {
                 "No training":       "none",
                 "Monthly (30d)":     "monthly",
                 "Bi-monthly (60d)":  "bimonthly",
                 "Quarterly (91d)":   "quarterly",
-                "Custom":            "custom",
             }
-            _active_label = {v: k for k, v in _compare_options.items()}.get(
+            _act_lbl = {v: k for k, v in _cmp_opts.items()}.get(
                 mc["training_program"], "No training"
             )
-            _default_sel = ["No training"] + (
-                [_active_label] if _active_label != "No training" else []
-            )
-
-            _use_my_settings = st.toggle(
-                "Use my current Custom settings for comparison",
-                value=True,
-                key="compare_use_my_settings",
-                help=(
-                    "ON: Custom line uses your current interval / effectiveness settings.  "
-                    "OFF: all programs use standardised defaults (monthly=30d, "
-                    "bi-monthly=60d, quarterly=91d, custom=30d)."
-                ),
-            )
-
             _selected = st.multiselect(
-                "Programs to compare (reference run)",
-                list(_compare_options.keys()),
-                default=_default_sel,
-                key="compare_programs",
+                "Programs to overlay",
+                list(_cmp_opts.keys()),
+                default=["No training"] + ([_act_lbl] if _act_lbl != "No training" else []),
+                key="cmp_progs",
             )
 
             if _selected:
-                _s = st.session_state
-                _compare_data: dict[str, np.ndarray] = {}
-                _training_days: dict[str, list[int]] = {}
-                _std_intervals = {"monthly": 30, "bimonthly": 60, "quarterly": 91, "custom": 30}
+                _cmp_data: dict[str, np.ndarray] = {}
+                _cmp_tdays: dict[str, list[int]] = {}
                 for _lbl in _selected:
-                    _prog = _compare_options[_lbl]
-                    _is_active = _use_my_settings and (_prog == mc["training_program"])
-                    _interval = (_s.training_interval if _is_active else _std_intervals.get(_prog, 30))
-                    _start    = (_s.training_start   if _is_active else 14)
+                    _prog = _cmp_opts[_lbl]
+                    _ivl  = _PROG_INTERVALS.get(_prog, 30)
                     _csim = _run_sim(
                         mc["n_days"], tuple(mc["providers"]),
                         mc["ref_schedule"], mc["ref_events_df"],
-                        int(_s.seed),
-                        _s.readiness_model, _s.readiness_threshold,
-                        _s.readiness_half_life, _s.ebbinghaus_b,
-                        _s.step_t2, _s.step_partial,
-                        _prog, _interval, _start,
-                        _s.training_effect      if _is_active else "full",
-                        _s.training_equivalence if _is_active else 1.0,
-                        _s.training_threshold   if _is_active else 0.5,
+                        int(st.session_state.seed),
+                        st.session_state.readiness_model,
+                        st.session_state.readiness_threshold,
+                        _prog, _ivl, _TRAINING_START,
+                        st.session_state.training_effect,
+                        st.session_state.training_equivalence,
                     )
-                    _compare_data[_lbl] = _csim.proportion_ready_on_shift
+                    _cmp_data[_lbl] = _csim.proportion_ready_on_shift
                     if _prog != "none":
-                        _training_days[_lbl] = list(
-                            np.arange(_start, mc["n_days"], _interval, dtype=int)
+                        _cmp_tdays[_lbl] = list(
+                            np.arange(_TRAINING_START, mc["n_days"], _ivl, dtype=int)
                         )
-                st.caption(
-                    "Comparison chart uses the reference run (seed 0). "
-                    "Vertical lines mark training session days."
-                )
                 st.plotly_chart(
-                    plot_training_comparison(
-                        _compare_data, mc["n_days"], _roll,
-                        training_days=_training_days,
-                    ),
+                    plot_training_comparison(_cmp_data, mc["n_days"], _roll_t,
+                                            training_days=_cmp_tdays),
                     use_container_width=True,
                 )
 
 
 # ---------------------------------------------------------------------------
-# Run simulation (triggered by sidebar button or auto-run flag)
+# Run block
 # ---------------------------------------------------------------------------
 
 if run_btn or st.session_state.get("_auto_run", False):
     st.session_state._auto_run = False
+    _s = st.session_state
     errors = []
 
-    # 1. Build events
-    if st.session_state.event_source == "Generate (Poisson MC)":
-        events_df = None   # generated inside _run_mc per seed
+    # Events
+    if _s.event_source == "Generate (Poisson MC)":
         fixed_events_df = None
     else:
-        fixed_events_df = st.session_state.events_df
+        fixed_events_df = _s.events_df
         if fixed_events_df is None:
-            errors.append("No events loaded. Upload a file or switch to 'Generate' mode.")
-        events_df = fixed_events_df
+            errors.append("No events loaded — upload a file or switch to Generate.")
 
-    # 2. Build schedule
-    sched_source = st.session_state.schedule_source
-    if sched_source == "Upload CSV / Excel" and st.session_state.schedule_array is not None:
-        arr = st.session_state.schedule_array
-        if arr.shape[1] >= n_days:
-            fixed_schedule = arr[:n_providers, :n_days]
-        else:
-            fixed_schedule = None  # uploaded but wrong length → fall back to generate
-        providers_list = (st.session_state.schedule_providers or [])[:n_providers] \
-            or [f"P{i+1:04d}" for i in range(n_providers)]
+    # Schedule
+    if _s.schedule_source == "Upload CSV / Excel" and _s.schedule_array is not None:
+        _arr = _s.schedule_array
+        fixed_schedule = _arr[:_s.n_providers, :_s.n_days] \
+                         if _arr.shape[1] >= _s.n_days else None
+        providers_list = (_s.schedule_providers or [])[:_s.n_providers] \
+                         or [f"P{i+1:04d}" for i in range(_s.n_providers)]
     else:
         fixed_schedule = None
-        providers_list = [f"P{i+1:04d}" for i in range(n_providers)]
+        providers_list = [f"P{i+1:04d}" for i in range(_s.n_providers)]
 
     if errors:
         for e in errors:
             st.sidebar.error(e)
         st.stop()
 
-    _s = st.session_state
+    _training_interval = _PROG_INTERVALS.get(_s.training_program, 30)
 
     with st.spinner(f"Running {_s.mc_n_samples} simulation{'s' if _s.mc_n_samples != 1 else ''}…"):
         _mc = _run_mc(
-            n_days=n_days,
+            n_days=_s.n_days,
             providers_tuple=tuple(providers_list),
             fixed_schedule=fixed_schedule,
             fixed_events_df=fixed_events_df,
@@ -1354,21 +1008,16 @@ if run_btn or st.session_state.get("_auto_run", False):
             schedule_night_pct=_s.get("schedule_night_pct"),
             readiness_model=_s.readiness_model,
             readiness_threshold=_s.readiness_threshold,
-            readiness_half_life=_s.readiness_half_life,
-            ebbinghaus_b=_s.ebbinghaus_b,
-            step_t2=_s.step_t2,
-            step_partial=_s.step_partial,
             training_program=_s.training_program,
-            training_interval=_s.training_interval,
-            training_start=_s.training_start,
+            training_interval=_training_interval,
+            training_start=_TRAINING_START,
             training_effect=_s.training_effect,
             training_equivalence=_s.training_equivalence,
-            training_threshold=_s.training_threshold,
             n_samples=_s.mc_n_samples,
-            base_seed=int(_s.seed),
+            base_seed=_s.seed,
         )
 
     st.session_state.mc_result = _mc
-    st.session_state.mc_ran = True
+    st.session_state.mc_ran    = True
     st.session_state._last_mc_hash = _mc_hash()
     st.rerun()
