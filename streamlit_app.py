@@ -196,6 +196,7 @@ def _run_mc(
 
     readiness_b_list, readiness_t_list, lift_list = [], [], []
     pct_exc_list, med_gap_list, med_nev_list, pct_by_thr_list, pct_by_thr_t_list = [], [], [], [], []
+    n_trainings_list, n_providers_reached_list, med_eff_gap_list = [], [], []
     ref = {}
     _sweep_thresholds = np.arange(7, 366)
 
@@ -270,6 +271,9 @@ def _run_mc(
             pct_by_thr_t_list.append(
                 np.array([100.0 * (_eff_gap > t).mean() for t in _sweep_thresholds])
             )
+            n_trainings_list.append(int(sim_t.training_matrix.sum()))
+            n_providers_reached_list.append(int(sim_t.training_matrix.any(axis=1).sum()))
+            med_eff_gap_list.append(float(np.median(_eff_gap)))
 
         if s == 0:
             ref = {
@@ -290,7 +294,10 @@ def _run_mc(
         "pct_exceeding":   np.array(pct_exc_list),
         "median_gap":      np.array(med_gap_list),
         "median_n_events": np.array(med_nev_list),
-        "lift":            np.array(lift_list) if lift_list else None,
+        "lift":                np.array(lift_list) if lift_list else None,
+        "n_trainings":         np.array(n_trainings_list) if n_trainings_list else None,
+        "n_providers_reached": np.array(n_providers_reached_list) if n_providers_reached_list else None,
+        "median_eff_gap":      np.array(med_eff_gap_list) if med_eff_gap_list else None,
         "n_days":          n_days,
         "n_samples":       n_samples,
         "threshold":       readiness_threshold,
@@ -597,19 +604,8 @@ with tab_params:
                     st.rerun()
 
     if st.session_state.training_program != "none":
-        _eff_opts = ["Full reset (training = live exposure)", "Partial boost"]
-        _eff = st.radio(
-            "Effectiveness", _eff_opts, horizontal=True,
-            index=0 if st.session_state.training_effect == "full" else 1,
-        )
-        st.session_state.training_effect = "full" if _eff == _eff_opts[0] else "partial"
-        if st.session_state.training_effect == "partial":
-            _eq = st.slider(
-                "Equivalence factor (1.0 = same as live exposure)",
-                0.1, 1.0, st.session_state.training_equivalence, 0.05,
-            )
-            st.session_state.training_equivalence = _eq
-
+        st.session_state.training_effect = "full"
+        st.session_state.training_equivalence = 1.0
         _interval = _PROG_INTERVALS[st.session_state.training_program]
         st.caption(
             f"Sessions every **{_interval} days**, first on day **{_TRAINING_START}**. "
@@ -764,45 +760,34 @@ with tab_training:
                 mc["training_program"], mc["training_program"]
             )
 
-            # Compute per-seed summaries
-            _b_means = np.array([np.nanmean(r) * 100 for r in mc["readiness_b"]])
-            _t_means = np.array([np.nanmean(r) * 100 for r in mc["readiness_t"]])
-            _lifts   = mc["lift"]
-            _days_b  = np.array([(r < 0.80).sum() for r in mc["readiness_b"]])
-            _days_t  = np.array([(r < 0.80).sum() for r in mc["readiness_t"]])
+            _lifts = mc["lift"]
 
             c1, c2, c3, c4 = st.columns(4)
             c1.metric(
-                "Readiness — no training",
-                f"{np.median(_b_means):.1f}%",
-                help=f"p10–p90: {np.percentile(_b_means,10):.1f}–{np.percentile(_b_means,90):.1f}%",
+                "Trainings delivered",
+                f"{int(np.median(mc['n_trainings'])):,}",
+                help=f"Median total provider-training events across {mc['n_samples']} runs. "
+                     f"p10–p90: {int(np.percentile(mc['n_trainings'],10)):,}–{int(np.percentile(mc['n_trainings'],90)):,}",
             )
             c2.metric(
-                "Readiness — with training",
-                f"{np.median(_t_means):.1f}%",
-                delta=f"{np.median(_lifts):+.1f} pp",
-                help=f"p10–p90: {np.percentile(_t_means,10):.1f}–{np.percentile(_t_means,90):.1f}%",
+                "Providers reached",
+                f"{int(np.median(mc['n_providers_reached'])):,}",
+                help=f"Median providers trained at least once. "
+                     f"p10–p90: {int(np.percentile(mc['n_providers_reached'],10)):,}–{int(np.percentile(mc['n_providers_reached'],90)):,}",
             )
             c3.metric(
-                "Days <80% — no training",
-                f"{np.median(_days_b):.0f}",
-                help=f"p10–p90: {np.percentile(_days_b,10):.0f}–{np.percentile(_days_b,90):.0f}",
+                "Readiness increase",
+                f"{np.median(_lifts):+.1f} pp",
+                help=f"Median lift in on-shift readiness vs. no training. "
+                     f"p10–p90: {np.percentile(_lifts,10):+.1f}–{np.percentile(_lifts,90):+.1f} pp",
             )
+            _gap_decrease = np.median(mc["median_gap"]) - np.median(mc["median_eff_gap"])
             c4.metric(
-                "Days <80% — with training",
-                f"{np.median(_days_t):.0f}",
-                delta=f"{np.median(_days_t)-np.median(_days_b):+.0f} days",
-                delta_color="inverse",
-                help=f"p10–p90: {np.percentile(_days_t,10):.0f}–{np.percentile(_days_t,90):.0f}",
+                "Median gap decrease",
+                f"{_gap_decrease:.0f} days",
+                help="Reduction in median inter-event gap when training sessions count as resets "
+                     "(baseline median gap − effective gap median).",
             )
-
-            if mc["ref_training_mat"] is not None:
-                _tm = mc["ref_training_mat"]
-                _c5, _c6, _, _ = st.columns(4)
-                _c5.metric("Sessions — ref run", f"{int(_tm.any(axis=0).sum()):,}",
-                           help="Days with at least one provider trained (seed-0).")
-                _c6.metric("Providers reached — ref run", f"{int(_tm.any(axis=1).sum()):,}",
-                           help="Unique providers trained at least once (seed-0).")
 
             # Gap threshold sweep — baseline vs trained
             st.divider()
