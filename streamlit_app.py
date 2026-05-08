@@ -319,6 +319,38 @@ def _run_mc(
 # Sidebar — N runs + Run button only
 # ---------------------------------------------------------------------------
 
+@st.dialog("How to use HaloSim")
+def _dlg_instructions():
+    st.markdown("""
+**1. Set parameters** in the ⚙️ Model Parameters tab.
+- *Simulation:* number of providers and simulation window
+- *HALO Events:* use the default rate or upload your own event log
+- *Provider Schedules:* generate a synthetic schedule or upload one
+- *Training Program:* choose None, Monthly, Bi-monthly, or Quarterly
+
+**2. Set N runs** with the sidebar slider (more runs = smoother distributions; 50 is a good default).
+
+**3. Click ▶ Run Simulation.**
+
+**4. Explore results:**
+- **📊 Exposure** — how often providers encounter a HALO event and how long their gaps are
+- **🏋️ Training** — how a training program changes readiness and gap distributions
+
+Re-run any time you change parameters. Download results as CSV from either tab.
+""")
+
+@st.dialog("About HaloSim")
+def _dlg_about():
+    st.markdown("""
+**HALO events** (High-Acuity, Low-Occurrence) — such as in-hospital cardiac arrests — are rare enough that most providers go months or years between live encounters. This infrequency creates a readiness gap: skills decay between exposures.
+
+**HaloSim** quantifies that gap. Given a provider schedule and an event rate, it simulates how often each provider is on shift when an event occurs, computes the maximum time between exposures, and models how training programs can substitute for live exposure to maintain readiness.
+
+The tool accompanies:
+> Walker D et al. *Code Blue blindspots: mapping nursing exposure to cardiac arrests.* Resuscitation. 2026. PMID: 41633464.
+""")
+
+
 with st.sidebar:
     _logo_col, _title_col = st.columns([1, 2.5])
     with _logo_col:
@@ -335,7 +367,19 @@ with st.sidebar:
         st.warning("Settings changed — re-run to update.")
 
     st.divider()
+    _info_c, _about_c = st.columns(2)
+    if _info_c.button("Instructions", use_container_width=True):
+        st.session_state._show_instructions = True
+    if _about_c.button("About", use_container_width=True):
+        st.session_state._show_about = True
+
     st.caption("Built by [Sangfroid Labs](https://sangfroidlabs.com)")
+
+
+if st.session_state.pop("_show_instructions", False):
+    _dlg_instructions()
+if st.session_state.pop("_show_about", False):
+    _dlg_about()
 
 
 # ---------------------------------------------------------------------------
