@@ -784,16 +784,16 @@ with tab_training:
             )
             c3.metric(
                 f"Change in % > {mc['threshold']}d gap",
-                f"{_pct_chg:+.1f} pp",
+                f"{_pct_chg:+.1f}%",
                 help=f"Change in the share of providers whose effective gap exceeds {mc['threshold']} days "
                      f"(trained − baseline). Negative = improvement. "
                      f"Baseline: {np.median(_pct_exc_b):.1f}% → Trained: {np.median(_pct_exc_t):.1f}%.",
             )
             c4.metric(
                 "On-shift readiness",
-                f"{np.median(_lifts):+.1f} pp",
+                f"{np.median(_lifts):+.1f}%",
                 help=f"Median increase in on-shift readiness vs. no training. "
-                     f"p10–p90: {np.percentile(_lifts,10):+.1f}–{np.percentile(_lifts,90):+.1f} pp",
+                     f"p10–p90: {np.percentile(_lifts,10):+.1f}–{np.percentile(_lifts,90):+.1f}%",
             )
 
             # Gap threshold sweep — baseline vs trained
