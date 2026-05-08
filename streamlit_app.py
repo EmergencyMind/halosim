@@ -373,7 +373,7 @@ with st.sidebar:
     if _about_c.button("About", use_container_width=True):
         st.session_state._show_about = True
 
-    st.caption("Built by [Sangfroid Labs](https://sangfroidlabs.com)")
+    st.caption("Built by [Sangfroid Labs](https://sangfroid-labs.netlify.app/)")
 
 
 if st.session_state.pop("_show_instructions", False):
