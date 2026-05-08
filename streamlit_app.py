@@ -436,8 +436,7 @@ with tab_params:
         ))
         st.session_state.event_rate = rate_per_year / 365.0
         st.caption(
-            f"~**{st.session_state.event_rate * 30.44:.1f} events/month** &nbsp;·&nbsp; "
-            f"{st.session_state.event_rate * n_days:.0f} expected over {n_days} days"
+            f"~**{st.session_state.event_rate * 30.44:.1f} events/month**"
         )
 
         with st.expander("Advanced: day / night split"):
@@ -681,8 +680,7 @@ with tab_exposure:
         st.divider()
         st.subheader("On-shift readiness over time")
         st.caption(
-            "Shaded band = p10–p90 across all runs. Solid line = median. "
-            "Off-shift providers excluded."
+            "Shaded band = p10–p90 across all runs. Solid line = median."
         )
         st.plotly_chart(
             plot_mc_readiness_band(mc["readiness_b"],
@@ -693,30 +691,6 @@ with tab_exposure:
             _roll_e = st.slider("Rolling mean (days)", 1, 90,
                                 st.session_state.get("_roll_e", 30), key="roll_e")
             st.session_state["_roll_e"] = _roll_e
-
-        # Summary table
-        st.divider()
-        st.dataframe(build_mc_summary_df(mc), use_container_width=True, hide_index=True)
-
-        # Histograms
-        st.divider()
-        st.subheader("Distribution across runs")
-        _h1, _h2, _h3 = st.columns(3)
-        with _h1:
-            st.plotly_chart(
-                plot_mc_histogram(_pct, f"% exceeding {thresh}-day threshold", unit="%"),
-                use_container_width=True,
-            )
-        with _h2:
-            st.plotly_chart(
-                plot_mc_histogram(_gap, "Median gap", unit=" days"),
-                use_container_width=True,
-            )
-        with _h3:
-            st.plotly_chart(
-                plot_mc_histogram(_nev, "Median exposures / provider"),
-                use_container_width=True,
-            )
 
         # Downloads
         st.divider()
@@ -802,8 +776,7 @@ with tab_training:
             st.caption(
                 "Blue = maximum gap between HALO exposures only (same as Exposure tab). "
                 "Green = maximum effective gap, counting both HALO exposures and training sessions "
-                "as resets — only providers who are on shift on a training day receive that reset. "
-                "Solid line = median; shaded = p10–p90 across all runs."
+                "as resets. Solid line = median; shaded = p10–p90 across all runs."
             )
             if mc.get("training_effect") == "partial":
                 _eq = mc.get("training_equivalence", 1.0)
