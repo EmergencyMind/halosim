@@ -80,13 +80,7 @@ class _HaloReport(FPDF):
         self.set_y(-14)
         self.set_font("Helvetica", "I", 7)
         self.set_text_color(*_MUTED_RGB)
-        self.multi_cell(
-            0, 4,
-            "Walker D et al. Code Blue blindspots: mapping nursing exposure to cardiac arrests. "
-            "Resuscitation. 2026. PMID: 41633464. "
-            "HaloSim: https://sfl-halosim.streamlit.app/",
-            align="C",
-        )
+        self.cell(0, 4, "https://sfl-halosim.streamlit.app/", align="C")
 
     def section_title(self, text: str):
         self.set_font("Helvetica", "B", 12)
