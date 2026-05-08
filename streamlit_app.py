@@ -820,6 +820,22 @@ with tab_training:
                     "treats every training session as a full reset regardless of equivalence. "
                     "The green ribbon overestimates training benefit."
                 )
+            _pct_t_debug = mc.get("pct_by_threshold_t")
+            _thr_debug   = mc["sweep_thresholds"]
+            _med_b_debug = np.percentile(mc["pct_by_threshold"], 50, axis=0)
+            _med_t_debug = np.percentile(_pct_t_debug, 50, axis=0) if _pct_t_debug is not None else None
+            def _xaty(curve, y):
+                if curve[0] < y or curve[-1] > y:
+                    return f"None (c0={curve[0]:.1f}, c-1={curve[-1]:.1f})"
+                return f"{np.interp(y, curve[::-1], _thr_debug[::-1]):.1f}d"
+            if _med_t_debug is not None:
+                st.caption(
+                    f"DEBUG — pct_t shape: {_pct_t_debug.shape} | "
+                    f"y=90: b={_xaty(_med_b_debug,90)} t={_xaty(_med_t_debug,90)} | "
+                    f"y=50: b={_xaty(_med_b_debug,50)} t={_xaty(_med_t_debug,50)} | "
+                    f"y=10: b={_xaty(_med_b_debug,10)} t={_xaty(_med_t_debug,10)}"
+                )
+
             st.plotly_chart(
                 plot_mc_threshold_sweep(
                     mc["pct_by_threshold"],
