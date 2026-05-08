@@ -1,7 +1,7 @@
 """
 report.py  -  PDF report generator for HaloSim.
 
-Uses fpdf2 for layout and matplotlib for chart-to-PNG conversion.
+Uses fpdf2 for layout and kaleido (via plotly) for chart-to-PNG conversion.
 Returns a bytes object suitable for st.download_button().
 """
 
@@ -10,10 +10,6 @@ from __future__ import annotations
 import io
 from datetime import date
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 
@@ -23,6 +19,8 @@ from halosim.viz import (
     plot_threshold_sweep,
     plot_readiness_timeseries,
     plot_exposure_count_histogram,
+    plot_mc_threshold_sweep,
+    plot_mc_readiness_band,
 )
 
 
@@ -37,94 +35,9 @@ _RULE_RGB   = (226, 232, 240)
 _GREEN_RGB  = (22, 163, 74)
 
 
-_BLUE  = "#2563eb"
-_GREEN = "#16a34a"
-_ORANGE = "#f97316"
-_GREY  = "#94a3b8"
-
-
-def _mpl_to_png(fig) -> bytes:
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    buf.seek(0)
-    return buf.read()
-
-
-def _chart_threshold_sweep(
-    pct_by_threshold: np.ndarray,
-    thresholds: np.ndarray,
-    pct_by_threshold_t: np.ndarray | None = None,
-    threshold_marker: int | None = None,
-) -> bytes:
-    """Threshold sweep ribbon chart as PNG bytes (matplotlib)."""
-    med_b = np.median(pct_by_threshold, axis=0)
-    p10_b = np.percentile(pct_by_threshold, 10, axis=0)
-    p90_b = np.percentile(pct_by_threshold, 90, axis=0)
-
-    fig, ax = plt.subplots(figsize=(8, 3.6))
-    ax.fill_between(thresholds, p10_b, p90_b, color=_BLUE, alpha=0.15)
-    ax.plot(thresholds, med_b, color=_BLUE, lw=2, label="No training")
-
-    if pct_by_threshold_t is not None:
-        med_t = np.median(pct_by_threshold_t, axis=0)
-        p10_t = np.percentile(pct_by_threshold_t, 10, axis=0)
-        p90_t = np.percentile(pct_by_threshold_t, 90, axis=0)
-        ax.fill_between(thresholds, p10_t, p90_t, color=_GREEN, alpha=0.15)
-        ax.plot(thresholds, med_t, color=_GREEN, lw=2, label="With training")
-
-    if threshold_marker is not None:
-        ax.axvline(threshold_marker, color=_ORANGE, lw=1.5, ls="--",
-                   label=f"Threshold ({threshold_marker}d)")
-
-    ax.set_xlabel("Gap threshold (days)", fontsize=9)
-    ax.set_ylabel("% providers exceeding", fontsize=9)
-    ax.yaxis.set_major_formatter(mticker.PercentFormatter())
-    ax.set_xlim(thresholds[0], thresholds[-1])
-    ax.set_ylim(0, 105)
-    ax.legend(fontsize=8)
-    ax.grid(axis="y", alpha=0.3)
-    fig.tight_layout()
-    return _mpl_to_png(fig)
-
-
-def _chart_readiness_band(
-    readiness_b: np.ndarray,
-    readiness_t: np.ndarray | None = None,
-    rolling_days: int = 30,
-) -> bytes:
-    """Readiness band chart as PNG bytes (matplotlib)."""
-    def _roll(arr2d):
-        med = np.nanmedian(arr2d, axis=0)
-        p10 = np.nanpercentile(arr2d, 10, axis=0)
-        p90 = np.nanpercentile(arr2d, 90, axis=0)
-        def _smooth(x):
-            return np.convolve(np.where(np.isnan(x), 0, x),
-                               np.ones(rolling_days) / rolling_days, mode="same")
-        return _smooth(med) * 100, _smooth(p10) * 100, _smooth(p90) * 100
-
-    n_days = readiness_b.shape[1]
-    days = np.arange(n_days)
-
-    fig, ax = plt.subplots(figsize=(8, 3.4))
-    med_b, p10_b, p90_b = _roll(readiness_b)
-    ax.fill_between(days, p10_b, p90_b, color=_BLUE, alpha=0.15)
-    ax.plot(days, med_b, color=_BLUE, lw=2, label="No training")
-
-    if readiness_t is not None:
-        med_t, p10_t, p90_t = _roll(readiness_t)
-        ax.fill_between(days, p10_t, p90_t, color=_GREEN, alpha=0.15)
-        ax.plot(days, med_t, color=_GREEN, lw=2, label="With training")
-
-    ax.set_xlabel("Day", fontsize=9)
-    ax.set_ylabel("On-shift readiness (%)", fontsize=9)
-    ax.yaxis.set_major_formatter(mticker.PercentFormatter())
-    ax.set_xlim(0, n_days - 1)
-    ax.set_ylim(0, 105)
-    ax.legend(fontsize=8)
-    ax.grid(axis="y", alpha=0.3)
-    fig.tight_layout()
-    return _mpl_to_png(fig)
+def _fig_to_png(fig, width: int = 740, height: int = 360) -> bytes:
+    """Render a Plotly figure to PNG bytes via kaleido."""
+    return fig.to_image(format="png", width=width, height=height, scale=2)
 
 
 def _pct_table(rdf: pd.DataFrame) -> list[dict]:
@@ -477,10 +390,13 @@ def generate_mc_report(mc: dict, params: dict) -> bytes:
              f"Solid line = median; shaded = p10-p90 across {n_samp} runs.", ln=True)
     pdf.set_text_color(*_DARK_RGB)
     pdf.ln(2)
-    sweep_img = _chart_threshold_sweep(
-        mc["pct_by_threshold"], mc["sweep_thresholds"],
-        pct_by_threshold_t=mc.get("pct_by_threshold_t") if training_active else None,
-        threshold_marker=thresh,
+    sweep_img = _fig_to_png(
+        plot_mc_threshold_sweep(
+            mc["pct_by_threshold"], mc["sweep_thresholds"],
+            pct_by_threshold_t=mc.get("pct_by_threshold_t") if training_active else None,
+            threshold_marker=thresh,
+        ),
+        width=740, height=400,
     )
     pdf.image(io.BytesIO(sweep_img), x=18, y=None, w=174)
 
@@ -493,10 +409,13 @@ def generate_mc_report(mc: dict, params: dict) -> bytes:
              "30-day rolling mean. Solid line = median; shaded = p10-p90.", ln=True)
     pdf.set_text_color(*_DARK_RGB)
     pdf.ln(2)
-    band_img = _chart_readiness_band(
-        mc["readiness_b"],
-        mc["readiness_t"] if training_active else None,
-        rolling_days=30,
+    band_img = _fig_to_png(
+        plot_mc_readiness_band(
+            mc["readiness_b"],
+            mc["readiness_t"] if training_active else None,
+            rolling_days=30,
+        ),
+        width=740, height=380,
     )
     pdf.image(io.BytesIO(band_img), x=18, y=None, w=174)
 
