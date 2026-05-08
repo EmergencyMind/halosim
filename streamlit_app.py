@@ -326,7 +326,7 @@ def _dlg_instructions():
 - *Simulation:* number of providers, duration, critical gap threshold, and number of simulations (50 is a good default — each run draws independent random seeds)
 - *HALO Events:* set an annual event rate, or upload your own event log (CSV/Excel)
 - *Provider Schedules:* pick a shift pattern (e.g. 3/7 Day, Progressive), or upload a schedule
-- *Training Program:* choose None, Monthly, Bi-monthly, or Quarterly — or leave as None to model exposure only
+- *Training Program:* choose Monthly, Bi-monthly, or Quarterly — or leave as None to model exposure only
 
 **2. Click ▶ Run Simulation** in the sidebar.
 
