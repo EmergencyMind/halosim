@@ -834,34 +834,6 @@ with tab_training:
                                     st.session_state.get("_roll_t", 30), key="roll_t")
                 st.session_state["_roll_t"] = _roll_t
 
-            # Lift histogram
-            st.plotly_chart(
-                plot_mc_histogram(_lifts, "Training lift", unit=" pp"),
-                use_container_width=True,
-            )
-
-            # Interpretation
-            _med = float(np.median(_lifts))
-            _p10 = float(np.percentile(_lifts, 10))
-            _p90 = float(np.percentile(_lifts, 90))
-            if abs(_med) < 1:
-                _interp = (
-                    f"**{_prog_label}** had minimal effect on median readiness across "
-                    f"{n_samp} runs — live exposure alone may be sufficient at this event rate."
-                )
-            elif _med > 0:
-                _interp = (
-                    f"**{_prog_label}** raised median readiness by **{_med:+.1f} pp** "
-                    f"(p10–p90: {_p10:+.1f} to {_p90:+.1f} pp) across {n_samp} runs. "
-                    f"The width of this range reflects how much the benefit depends on "
-                    "when events happen to fall relative to training sessions."
-                )
-            else:
-                _interp = (
-                    f"Median readiness with training is similar to baseline ({_med:+.1f} pp). "
-                    "Consider increasing training frequency."
-                )
-            st.info(_interp)
 
 
 
