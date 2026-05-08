@@ -380,9 +380,9 @@ def generate_mc_report(mc: dict, params: dict) -> bytes:
         )
     pdf.callout(f"Interpretation: {exp_interp}")
 
-    # ── Page 2: Threshold sweep + readiness band ──────────────────────────────
+    # ── Page 2: Exposure analysis charts (exposure only, no training overlay) ───
     pdf.add_page()
-    pdf.section_title("Providers with Gap Exceeding Threshold")
+    pdf.section_title("Exposure Analysis  -  Charts")
     pdf.set_font("Helvetica", size=8)
     pdf.set_text_color(*_MUTED_RGB)
     pdf.cell(0, 5,
@@ -393,7 +393,7 @@ def generate_mc_report(mc: dict, params: dict) -> bytes:
     sweep_img = _fig_to_png(
         plot_mc_threshold_sweep(
             mc["pct_by_threshold"], mc["sweep_thresholds"],
-            pct_by_threshold_t=mc.get("pct_by_threshold_t") if training_active else None,
+            pct_by_threshold_t=None,
             threshold_marker=thresh,
         ),
         width=740, height=400,
@@ -410,11 +410,7 @@ def generate_mc_report(mc: dict, params: dict) -> bytes:
     pdf.set_text_color(*_DARK_RGB)
     pdf.ln(2)
     band_img = _fig_to_png(
-        plot_mc_readiness_band(
-            mc["readiness_b"],
-            mc["readiness_t"] if training_active else None,
-            rolling_days=30,
-        ),
+        plot_mc_readiness_band(mc["readiness_b"], rolling_days=30),
         width=740, height=380,
     )
     pdf.image(io.BytesIO(band_img), x=18, y=None, w=174)
@@ -452,5 +448,39 @@ def generate_mc_report(mc: dict, params: dict) -> bytes:
                 f"percentage points."
             )
         pdf.callout(f"Interpretation: {t_interp}")
+
+        pdf.ln(4)
+        pdf.section_title("Providers with Effective Gap Exceeding Threshold")
+        pdf.set_font("Helvetica", size=8)
+        pdf.set_text_color(*_MUTED_RGB)
+        pdf.cell(0, 5,
+                 "Blue = exposure only. Green = effective gap counting training sessions as resets. "
+                 f"Solid line = median; shaded = p10-p90 across {n_samp} runs.", ln=True)
+        pdf.set_text_color(*_DARK_RGB)
+        pdf.ln(2)
+        t_sweep_img = _fig_to_png(
+            plot_mc_threshold_sweep(
+                mc["pct_by_threshold"], mc["sweep_thresholds"],
+                pct_by_threshold_t=mc.get("pct_by_threshold_t"),
+                threshold_marker=thresh,
+            ),
+            width=740, height=400,
+        )
+        pdf.image(io.BytesIO(t_sweep_img), x=18, y=None, w=174)
+
+        pdf.ln(4)
+        pdf.section_title("On-Shift Readiness Over Time  -  Baseline vs. Trained")
+        pdf.set_font("Helvetica", size=8)
+        pdf.set_text_color(*_MUTED_RGB)
+        pdf.cell(0, 5,
+                 "Blue = no training. Green = with training program. "
+                 "30-day rolling mean. Solid line = median; shaded = p10-p90.", ln=True)
+        pdf.set_text_color(*_DARK_RGB)
+        pdf.ln(2)
+        t_band_img = _fig_to_png(
+            plot_mc_readiness_band(mc["readiness_b"], mc["readiness_t"], rolling_days=30),
+            width=740, height=380,
+        )
+        pdf.image(io.BytesIO(t_band_img), x=18, y=None, w=174)
 
     return bytes(pdf.output())
