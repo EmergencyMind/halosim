@@ -323,14 +323,12 @@ def _run_mc(
 def _dlg_instructions():
     st.markdown("""
 **1. Configure your model** in ⚙️ Model Parameters — four sections:
-- *Simulation:* number of providers, duration, and critical gap threshold
+- *Simulation:* number of providers, duration, critical gap threshold, and number of simulations (50 is a good default — each run draws independent random seeds)
 - *HALO Events:* set an annual event rate, or upload your own event log (CSV/Excel)
 - *Provider Schedules:* pick a shift pattern (e.g. 3/7 Day, Progressive), or upload a schedule
 - *Training Program:* choose None, Monthly, Bi-monthly, or Quarterly — or leave as None to model exposure only
 
-**2. Set the number of simulations** — enter directly in the Simulation section or use the sidebar. Each run draws independent random seeds; 50 runs is a good default for stable distributions.
-
-**3. Click ▶ Run Simulation** in the sidebar.
+**2. Click ▶ Run Simulation** in the sidebar.
 
 **4. Explore results across two tabs:**
 - **📊 Exposure** — gap distributions, threshold exceedance, and on-shift readiness over time
