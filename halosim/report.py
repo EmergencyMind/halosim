@@ -19,6 +19,8 @@ from halosim.viz import (
     plot_threshold_sweep,
     plot_readiness_timeseries,
     plot_exposure_count_histogram,
+    plot_mc_threshold_sweep,
+    plot_mc_readiness_band,
 )
 
 
@@ -310,6 +312,158 @@ def generate_pdf(
                 f"Training raised average on-shift readiness by {improvement:.1f} percentage points "
                 f"({b_mean:.0f}% -> {t_mean:.0f}%) using the '{training_program_label}' program. "
                 f"A total of {n_train:,} training events were delivered across the simulation window."
+            )
+        pdf.callout(f"Interpretation: {t_interp}")
+
+    return bytes(pdf.output())
+
+
+def generate_mc_report(mc: dict, params: dict) -> bytes:
+    """
+    Build a PDF report from an MC result dict (as returned by _run_mc) and return raw bytes.
+
+    params keys: n_providers, n_days, threshold, event_source, event_rate,
+                 training_program_label, n_samples, simulation_date.
+    """
+    pdf = _HaloReport()
+    training_active = mc.get("training_program", "none") != "none"
+    thresh = mc["threshold"]
+    n_samp = mc["n_samples"]
+
+    # ── Page 1: Title + parameters + exposure metrics ─────────────────────────
+    pdf.add_page()
+
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(*_DARK_RGB)
+    pdf.cell(0, 10, "HaloSim Exposure & Readiness Report", ln=True)
+    pdf.set_font("Helvetica", size=9)
+    pdf.set_text_color(*_MUTED_RGB)
+    pdf.cell(0, 5,
+             f"Generated {params.get('simulation_date', date.today().isoformat())}  ·  "
+             "https://sfl-halosim.streamlit.app/", ln=True)
+    pdf.ln(4)
+
+    pdf.section_title("Simulation Parameters")
+    pdf.kv_row("Providers:", f"{params.get('n_providers', '-'):,}")
+    pdf.kv_row("Duration:", f"{params.get('n_days', '-')} days")
+    pdf.kv_row("Critical threshold:", f"{thresh} days")
+    pdf.kv_row("Event source:", str(params.get('event_source', '-')))
+    if params.get('event_source') == "Generate (Poisson MC)":
+        rate = params.get('event_rate', 0.0)
+        pdf.kv_row("Event rate:", f"~{rate * 365:.0f} events/year  ({rate * 30.44:.1f}/month)")
+    pdf.kv_row("Training program:", str(params.get('training_program_label', 'None (exposure only)')))
+    pdf.kv_row("MC runs:", f"{n_samp:,}")
+    pdf.ln(4)
+
+    pct_exc = float(np.median(mc["pct_exceeding"]))
+    med_gap = float(np.median(mc["median_gap"]))
+    med_nev = float(np.median(mc["median_n_events"]))
+
+    pdf.section_title("Exposure Analysis  -  Key Metrics")
+    box_w = 56.0
+    y0 = pdf.get_y()
+    pdf.metric_box(18,             y0, box_w, f"% providers > {thresh}d gap", f"{pct_exc:.1f}%")
+    pdf.metric_box(18 + box_w + 2, y0, box_w, "Median gap (days)",           f"{med_gap:.0f}d")
+    pdf.metric_box(18 + (box_w+2)*2, y0, box_w, "Median exposures / provider", f"{med_nev:.1f}")
+    pdf.set_y(y0 + 22)
+    pdf.ln(4)
+
+    if pct_exc >= 80:
+        exp_interp = (
+            f"{pct_exc:.0f}% of providers exceed the {thresh}-day gap threshold - consistent with "
+            "the paper's community hospital finding of 98% (PMID: 41633464). Consider whether "
+            "your training frequency is sufficient to compensate for infrequent live exposure."
+        )
+    elif pct_exc >= 40:
+        exp_interp = (
+            f"{pct_exc:.0f}% of providers exceed the {thresh}-day gap threshold. "
+            "Your event rate or shift density differs from the paper's community hospital setting."
+        )
+    else:
+        exp_interp = (
+            f"{pct_exc:.0f}% of providers exceed the {thresh}-day gap threshold - relatively low. "
+            "Live exposure alone may maintain meaningful readiness at this event rate."
+        )
+    pdf.callout(f"Interpretation: {exp_interp}")
+
+    # ── Page 2: Threshold sweep + readiness band ──────────────────────────────
+    pdf.add_page()
+    pdf.section_title("Providers with Gap Exceeding Threshold")
+    pdf.set_font("Helvetica", size=8)
+    pdf.set_text_color(*_MUTED_RGB)
+    pdf.cell(0, 5,
+             "Percentage of providers whose maximum inter-exposure gap exceeds each threshold (7-365 days). "
+             f"Solid line = median; shaded = p10-p90 across {n_samp} runs.", ln=True)
+    pdf.set_text_color(*_DARK_RGB)
+    pdf.ln(2)
+    try:
+        sweep_img = _fig_to_png(
+            plot_mc_threshold_sweep(
+                mc["pct_by_threshold"], mc["sweep_thresholds"],
+                pct_by_threshold_t=mc.get("pct_by_threshold_t") if training_active else None,
+                threshold_marker=thresh,
+            ),
+            width=740, height=380,
+        )
+        pdf.image(io.BytesIO(sweep_img), x=18, y=None, w=174)
+    except Exception:
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.cell(0, 5, "[Chart could not be rendered - open the app to view.]", ln=True)
+
+    pdf.ln(4)
+    pdf.section_title("On-Shift Readiness Over Time")
+    pdf.set_font("Helvetica", size=8)
+    pdf.set_text_color(*_MUTED_RGB)
+    pdf.cell(0, 5,
+             "Proportion of on-shift providers who are within the critical gap threshold. "
+             "30-day rolling mean. Solid line = median; shaded = p10-p90.", ln=True)
+    pdf.set_text_color(*_DARK_RGB)
+    pdf.ln(2)
+    try:
+        band_img = _fig_to_png(
+            plot_mc_readiness_band(
+                mc["readiness_b"],
+                mc["readiness_t"] if training_active else None,
+                rolling_days=30,
+            ),
+            width=740, height=360,
+        )
+        pdf.image(io.BytesIO(band_img), x=18, y=None, w=174)
+    except Exception:
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.cell(0, 5, "[Chart could not be rendered - open the app to view.]", ln=True)
+
+    # ── Page 3: Training effects (only if training active) ────────────────────
+    if training_active:
+        pdf.add_page()
+        pdf.section_title("Training Effects")
+
+        n_train   = int(np.median(mc["n_trainings"]))
+        n_reached = int(np.median(mc["n_providers_reached"]))
+        pct_exc_t = float(np.median(mc["pct_exceeding_t"]))
+        pct_chg   = pct_exc_t - pct_exc
+        lift      = float(np.median(mc["lift"]))
+
+        box_w2 = 41.5
+        y1 = pdf.get_y()
+        pdf.metric_box(18,                 y1, box_w2, "Training sessions",        f"{n_train:,}")
+        pdf.metric_box(18 + (box_w2+2),    y1, box_w2, "Providers trained",        f"{n_reached:,}")
+        pdf.metric_box(18 + (box_w2+2)*2,  y1, box_w2, f"Change in % > {thresh}d", f"{pct_chg:+.1f}%")
+        pdf.metric_box(18 + (box_w2+2)*3,  y1, box_w2, "On-shift readiness",       f"{lift:+.1f}%")
+        pdf.set_y(y1 + 22)
+        pdf.ln(4)
+
+        if abs(lift) < 1:
+            t_interp = (
+                "Training had minimal effect on on-shift readiness across the simulation window. "
+                "The live event rate may be sufficient to maintain baseline readiness independently."
+            )
+        else:
+            prog_label = params.get('training_program_label', 'the selected program')
+            t_interp = (
+                f"{prog_label} raised median on-shift readiness by {lift:+.1f}% and reduced "
+                f"the share of providers exceeding the {thresh}-day gap threshold by {abs(pct_chg):.1f} "
+                f"percentage points."
             )
         pdf.callout(f"Interpretation: {t_interp}")
 

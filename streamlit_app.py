@@ -4,6 +4,7 @@ HaloSim — HALO Event Exposure & Training Simulation
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +20,7 @@ from halosim.schedules import (
     MAX_PROVIDERS,
     WARN_PROVIDERS,
 )
+from halosim.report import generate_mc_report
 from halosim.simulation import Simulation
 from halosim.viz import (
     plot_mc_readiness_band,
@@ -334,7 +336,7 @@ def _dlg_instructions():
 - **📊 Exposure** — gap distributions, threshold exceedance, and on-shift readiness over time
 - **🏋️ Training** — how the chosen program shifts gap distributions and readiness vs. no training (only active when a training program is selected)
 
-Re-run any time you change a parameter. Results can be downloaded as CSV from each tab.
+Re-run any time you change a parameter. Download a PDF report or the raw simulation data from the **⬇️ Download Results** tab.
 """)
 
 @st.dialog("About HaloSim")
@@ -402,8 +404,8 @@ if st.session_state.mc_ran and st.session_state.mc_result is not None:
 # Tabs
 # ---------------------------------------------------------------------------
 
-tab_params, tab_exposure, tab_training = st.tabs(
-    ["⚙️ Model Parameters", "📊 Exposure", "🏋️ Training"]
+tab_params, tab_exposure, tab_training, tab_download = st.tabs(
+    ["⚙️ Model Parameters", "📊 Exposure", "🏋️ Training", "⬇️ Download Results"]
 )
 
 
@@ -734,22 +736,6 @@ with tab_exposure:
                                 st.session_state.get("_roll_e", 30), key="roll_e")
             st.session_state["_roll_e"] = _roll_e
 
-        # Downloads
-        st.divider()
-        _mc_dl = pd.DataFrame({
-            "run":                     list(range(1, n_samp + 1)),
-            "seed":                    mc["seeds"],
-            "pct_exceeding_threshold": mc["pct_exceeding"].round(2),
-            "median_gap_days":         mc["median_gap"].round(1),
-            "median_n_events":         mc["median_n_events"].round(1),
-        })
-        if mc["lift"] is not None:
-            _mc_dl["training_lift_pp"] = mc["lift"].round(2)
-        st.download_button(
-            "📥 Download MC results",
-            data=_mc_dl.to_csv(index=False).encode(),
-            file_name="halosim_mc.csv", mime="text/csv",
-        )
 
 
 
@@ -850,6 +836,83 @@ with tab_training:
                 st.session_state["_roll_t"] = _roll_t
 
 
+# ── Tab 3: Download Results ────────────────────────────────────────────────
+
+with tab_download:
+    st.header("Download Results")
+
+    if not st.session_state.mc_ran or st.session_state.mc_result is None:
+        st.info(
+            "Run a simulation first using **▶ Run Simulation** in the sidebar, "
+            "then return here to download."
+        )
+    else:
+        mc   = st.session_state.mc_result
+        _s   = st.session_state
+        _prog_label_dl = {v: k for k, v in _PROG_MAP.items()}.get(
+            mc["training_program"], "None (exposure only)"
+        )
+
+        _dl_c1, _dl_c2 = st.columns(2)
+
+        # ── PDF Report ─────────────────────────────────────────────────────
+        with _dl_c1:
+            st.subheader("Report (PDF)")
+            st.caption(
+                "Formatted report with simulation parameters, exposure metrics, "
+                "and charts. Includes training effects section if a program was selected."
+            )
+            _report_params = {
+                "n_providers":          len(mc["providers"]),
+                "n_days":               mc["n_days"],
+                "threshold":            mc["threshold"],
+                "event_source":         _s.event_source,
+                "event_rate":           _s.event_rate,
+                "training_program_label": _prog_label_dl,
+                "n_samples":            mc["n_samples"],
+                "simulation_date":      __import__("datetime").date.today().isoformat(),
+            }
+            try:
+                _pdf_bytes = generate_mc_report(mc, _report_params)
+                st.download_button(
+                    "📄 Download PDF report",
+                    data=_pdf_bytes,
+                    file_name="halosim_report.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            except Exception as _e:
+                st.error(f"Report generation failed: {_e}")
+
+        # ── Raw Data (JSON) ─────────────────────────────────────────────────
+        with _dl_c2:
+            st.subheader("Raw Data (JSON)")
+            st.caption(
+                "Schedules, events, and training assignments for the reference run "
+                "(seed 0). No analysis — raw simulation inputs only."
+            )
+            _record: dict = {
+                "seed":      int(mc["seeds"][0]),
+                "providers": list(mc["providers"]),
+                "events":    mc["ref_events_df"][["day_idx", "shift_type"]].to_dict(orient="records"),
+                "schedule":  {
+                    p: [str(c) for c in mc["ref_schedule"][i]]
+                    for i, p in enumerate(mc["providers"])
+                },
+            }
+            if mc.get("ref_training_mat") is not None:
+                _record["training"] = {
+                    p: [int(d) for d in np.where(mc["ref_training_mat"][i])[0]]
+                    for i, p in enumerate(mc["providers"])
+                }
+            _json_bytes = json.dumps(_record, indent=2).encode("utf-8")
+            st.download_button(
+                "📦 Download raw data (JSON)",
+                data=_json_bytes,
+                file_name="halosim_raw.json",
+                mime="application/json",
+                use_container_width=True,
+            )
 
 
 # ---------------------------------------------------------------------------
