@@ -322,27 +322,27 @@ def _run_mc(
 @st.dialog("How to use HaloSim")
 def _dlg_instructions():
     st.markdown("""
-**1. Set parameters** in the ⚙️ Model Parameters tab.
-- *Simulation:* number of providers and simulation window
-- *HALO Events:* use the default rate or upload your own event log
-- *Provider Schedules:* generate a synthetic schedule or upload one
-- *Training Program:* choose None, Monthly, Bi-monthly, or Quarterly
+**1. Configure your model** in ⚙️ Model Parameters — four sections:
+- *Simulation:* number of providers, duration, and critical gap threshold
+- *HALO Events:* set an annual event rate, or upload your own event log (CSV/Excel)
+- *Provider Schedules:* pick a shift pattern (e.g. 3/7 Day, Progressive), or upload a schedule
+- *Training Program:* choose None, Monthly, Bi-monthly, or Quarterly — or leave as None to model exposure only
 
-**2. Set N runs** with the sidebar slider (more runs = smoother distributions; 50 is a good default).
+**2. Set the number of simulations** — enter directly in the Simulation section or use the sidebar. Each run draws independent random seeds; 50 runs is a good default for stable distributions.
 
-**3. Click ▶ Run Simulation.**
+**3. Click ▶ Run Simulation** in the sidebar.
 
-**4. Explore results:**
-- **📊 Exposure** — how often providers encounter a HALO event and how long their gaps are
-- **🏋️ Training** — how a training program changes readiness and gap distributions
+**4. Explore results across two tabs:**
+- **📊 Exposure** — gap distributions, threshold exceedance, and on-shift readiness over time
+- **🏋️ Training** — how the chosen program shifts gap distributions and readiness vs. no training (only active when a training program is selected)
 
-Re-run any time you change parameters. Download results as CSV from either tab.
+Re-run any time you change a parameter. Results can be downloaded as CSV from each tab.
 """)
 
 @st.dialog("About HaloSim")
 def _dlg_about():
     st.markdown("""
-**HALO events** (High-Acuity, Low-Occurrence) — such as in-hospital cardiac arrests — are rare enough that most providers go months or years between live encounters. This infrequency creates a readiness gap: skills decay between exposures.
+**HALO events** (High-Acuity, Low-Occurrence) — such as in-hospital cardiac arrests — are rare enough that most providers go extended periods of time between live encounters. This infrequency creates a readiness gap: skills decay between exposures.
 
 **HaloSim** quantifies that gap. Given a provider schedule and an event rate, it simulates how often each provider is on shift when an event occurs, computes the maximum time between exposures, and models how training programs can substitute for live exposure to maintain readiness.
 
