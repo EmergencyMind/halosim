@@ -196,7 +196,7 @@ def _run_mc(
 
     readiness_b_list, readiness_t_list, lift_list = [], [], []
     pct_exc_list, med_gap_list, med_nev_list, pct_by_thr_list, pct_by_thr_t_list = [], [], [], [], []
-    n_trainings_list, n_providers_reached_list, med_eff_gap_list = [], [], []
+    n_trainings_list, n_providers_reached_list, med_eff_gap_list, pct_exc_t_list = [], [], [], []
     ref = {}
     _sweep_thresholds = np.arange(7, 366)
 
@@ -271,9 +271,10 @@ def _run_mc(
             pct_by_thr_t_list.append(
                 np.array([100.0 * (_eff_gap > t).mean() for t in _sweep_thresholds])
             )
-            n_trainings_list.append(int(sim_t.training_matrix.sum()))
+            n_trainings_list.append(int(sim_t.training_matrix.any(axis=0).sum()))
             n_providers_reached_list.append(int(sim_t.training_matrix.any(axis=1).sum()))
             med_eff_gap_list.append(float(np.median(_eff_gap)))
+            pct_exc_t_list.append(100.0 * (_eff_gap > readiness_threshold).mean())
 
         if s == 0:
             ref = {
@@ -298,6 +299,7 @@ def _run_mc(
         "n_trainings":         np.array(n_trainings_list) if n_trainings_list else None,
         "n_providers_reached": np.array(n_providers_reached_list) if n_providers_reached_list else None,
         "median_eff_gap":      np.array(med_eff_gap_list) if med_eff_gap_list else None,
+        "pct_exceeding_t":     np.array(pct_exc_t_list) if pct_exc_t_list else None,
         "n_days":          n_days,
         "n_samples":       n_samples,
         "threshold":       readiness_threshold,
@@ -761,32 +763,37 @@ with tab_training:
             )
 
             _lifts = mc["lift"]
+            _n_train = mc["n_trainings"]
+            _n_reached = mc["n_providers_reached"]
+            _pct_exc_b = mc["pct_exceeding"]
+            _pct_exc_t = mc["pct_exceeding_t"]
+            _pct_chg = np.median(_pct_exc_t) - np.median(_pct_exc_b)
 
             c1, c2, c3, c4 = st.columns(4)
             c1.metric(
-                "Trainings delivered",
-                f"{int(np.median(mc['n_trainings'])):,}",
-                help=f"Median total provider-training events across {mc['n_samples']} runs. "
-                     f"p10–p90: {int(np.percentile(mc['n_trainings'],10)):,}–{int(np.percentile(mc['n_trainings'],90)):,}",
+                "Training sessions",
+                f"{int(np.median(_n_train)):,}",
+                help=f"Median number of training sessions held across {mc['n_samples']} runs. "
+                     f"p10–p90: {int(np.percentile(_n_train,10)):,}–{int(np.percentile(_n_train,90)):,}",
             )
             c2.metric(
-                "Providers reached",
-                f"{int(np.median(mc['n_providers_reached'])):,}",
-                help=f"Median providers trained at least once. "
-                     f"p10–p90: {int(np.percentile(mc['n_providers_reached'],10)):,}–{int(np.percentile(mc['n_providers_reached'],90)):,}",
+                "Providers trained",
+                f"{int(np.median(_n_reached)):,}",
+                help=f"Median providers who received at least one training session. "
+                     f"p10–p90: {int(np.percentile(_n_reached,10)):,}–{int(np.percentile(_n_reached,90)):,}",
             )
             c3.metric(
-                "Readiness increase",
-                f"{np.median(_lifts):+.1f} pp",
-                help=f"Median lift in on-shift readiness vs. no training. "
-                     f"p10–p90: {np.percentile(_lifts,10):+.1f}–{np.percentile(_lifts,90):+.1f} pp",
+                f"Change in % > {mc['threshold']}d gap",
+                f"{_pct_chg:+.1f} pp",
+                help=f"Change in the share of providers whose effective gap exceeds {mc['threshold']} days "
+                     f"(trained − baseline). Negative = improvement. "
+                     f"Baseline: {np.median(_pct_exc_b):.1f}% → Trained: {np.median(_pct_exc_t):.1f}%.",
             )
-            _gap_decrease = np.median(mc["median_gap"]) - np.median(mc["median_eff_gap"])
             c4.metric(
-                "Median gap decrease",
-                f"{_gap_decrease:.0f} days",
-                help="Reduction in median inter-event gap when training sessions count as resets "
-                     "(baseline median gap − effective gap median).",
+                "On-shift readiness",
+                f"{np.median(_lifts):+.1f} pp",
+                help=f"Median increase in on-shift readiness vs. no training. "
+                     f"p10–p90: {np.percentile(_lifts,10):+.1f}–{np.percentile(_lifts,90):+.1f} pp",
             )
 
             # Gap threshold sweep — baseline vs trained
