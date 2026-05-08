@@ -445,7 +445,7 @@ def plot_mc_readiness_band(
         x=np.concatenate([dates, dates[::-1]]),
         y=np.concatenate([hi_b, lo_b[::-1]]),
         fill="toself",
-        fillcolor="rgba(148,163,184,0.20)",
+        fillcolor="rgba(37,99,235,0.12)",
         line=dict(color="rgba(0,0,0,0)"),
         showlegend=True,
         name=f"No training (p{p_low}–p{p_high})",
@@ -455,7 +455,7 @@ def plot_mc_readiness_band(
         x=dates, y=med_b,
         mode="lines",
         name="No training (median)",
-        line=dict(color=_GREY, width=2),
+        line=dict(color=_BLUE, width=2),
     ))
 
     if readiness_t is not None:

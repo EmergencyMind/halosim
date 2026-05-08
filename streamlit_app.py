@@ -832,14 +832,15 @@ with tab_training:
 
             # Readiness band chart
             st.divider()
-            _roll_t = st.slider("Rolling mean (days)", 1, 90,
-                                st.session_state.get("_roll_t", 30), key="roll_t")
-            st.session_state["_roll_t"] = _roll_t
             st.plotly_chart(
                 plot_mc_readiness_band(mc["readiness_b"], mc["readiness_t"],
-                                       rolling_days=_roll_t),
+                                       rolling_days=st.session_state.get("_roll_t", 30)),
                 use_container_width=True,
             )
+            with st.expander("Chart options"):
+                _roll_t = st.slider("Rolling mean (days)", 1, 90,
+                                    st.session_state.get("_roll_t", 30), key="roll_t")
+                st.session_state["_roll_t"] = _roll_t
 
             # Lift histogram
             st.plotly_chart(
