@@ -665,11 +665,13 @@ def plot_mc_threshold_sweep(
         x_b = _x_at_y(med_b, float(y_lvl))
         x_t = _x_at_y(med_t, float(y_lvl)) if pct_by_threshold_t is not None else None
 
+        _outline = dict(color="white", width=2)
+
         if x_b is not None:
             fig.add_trace(go.Scatter(
                 x=[x_b], y=[y_lvl],
                 mode="markers+text",
-                marker=dict(color=_ORANGE, size=size, symbol=symbol),
+                marker=dict(color=_ORANGE, size=size, symbol=symbol, line=_outline),
                 text=[f"  {x_b:.0f}d"],
                 textposition="middle right",
                 textfont=dict(size=11, color=_ORANGE),
@@ -681,7 +683,7 @@ def plot_mc_threshold_sweep(
             fig.add_trace(go.Scatter(
                 x=[x_t], y=[y_lvl],
                 mode="markers+text",
-                marker=dict(color=_ORANGE, size=size, symbol=symbol),
+                marker=dict(color=_ORANGE, size=size, symbol=symbol, line=_outline),
                 text=[f"{x_t:.0f}d  "],
                 textposition="middle left",
                 textfont=dict(size=11, color=_ORANGE),
@@ -693,7 +695,7 @@ def plot_mc_threshold_sweep(
             fig.add_trace(go.Scatter(
                 x=[x_t, x_b], y=[y_lvl, y_lvl],
                 mode="lines",
-                line=dict(color=_ORANGE, width=2.5),
+                line=dict(color=_ORANGE, width=3),
                 showlegend=False,
                 hoverinfo="skip",
             ))
