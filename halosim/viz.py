@@ -672,9 +672,9 @@ def plot_mc_threshold_sweep(
                 x=[x_b], y=[y_lvl],
                 mode="markers+text",
                 marker=dict(color=_ORANGE, size=size, symbol=symbol, line=_outline),
-                text=[f"  {x_b:.0f}d"],
+                text=[f"  {x_b:.0f}d ({y_lvl}%)"],
                 textposition="middle right",
-                textfont=dict(size=11, color=_ORANGE),
+                textfont=dict(size=13, color=_ORANGE),
                 showlegend=False,
                 hovertemplate=f"{x_b:.0f}d → {y_lvl}% (exposure only)<extra></extra>",
             ))
@@ -686,7 +686,7 @@ def plot_mc_threshold_sweep(
                 marker=dict(color=_ORANGE, size=size, symbol=symbol, line=_outline),
                 text=[f"{x_t:.0f}d  "],
                 textposition="middle left",
-                textfont=dict(size=11, color=_ORANGE),
+                textfont=dict(size=13, color=_ORANGE),
                 showlegend=False,
                 hovertemplate=f"{x_t:.0f}d → {y_lvl}% (with training)<extra></extra>",
             ))
@@ -704,10 +704,14 @@ def plot_mc_threshold_sweep(
         fig.add_vline(
             x=threshold_marker,
             line_dash="dash", line_color=_ORANGE, line_width=1.5,
-            annotation_text=f"{threshold_marker}d",
-            annotation_position="top right",
-            annotation_font=dict(color=_ORANGE, size=11),
         )
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None],
+            mode="lines",
+            line=dict(color=_ORANGE, width=1.5, dash="dash"),
+            name=f"Threshold ({threshold_marker}d)",
+            showlegend=True,
+        ))
 
     title_suffix = f"{n_samples} simulation{'s' if n_samples != 1 else ''}"
     fig.update_layout(
