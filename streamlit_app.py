@@ -40,7 +40,7 @@ st.set_page_config(
     page_title="HaloSim",
     page_icon="https://raw.githubusercontent.com/EmergencyMind/halosim/master/assets/logo.png",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 st.markdown(
@@ -60,6 +60,19 @@ st.markdown(
         padding: 0.75rem 1rem;
       }
       [data-testid="stTabs"] button { font-weight: 500; }
+      @media screen and (max-width: 640px) {
+        [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
+        [data-testid="stColumn"] {
+          width: 100% !important;
+          flex: 0 0 100% !important;
+          min-width: 100% !important;
+        }
+        [data-testid="stTabs"] button {
+          font-size: 0.75rem !important;
+          padding: 0.4rem 0.5rem !important;
+        }
+        [data-testid="stMetric"] { padding: 0.5rem 0.75rem !important; }
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -771,27 +784,28 @@ with tab_training:
             _pct_exc_t = mc["pct_exceeding_t"]
             _pct_chg = np.median(_pct_exc_t) - np.median(_pct_exc_b)
 
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric(
+            _r1c1, _r1c2 = st.columns(2)
+            _r2c1, _r2c2 = st.columns(2)
+            _r1c1.metric(
                 "Training sessions",
                 f"{int(np.median(_n_train)):,}",
                 help=f"Median number of training sessions held across {mc['n_samples']} runs. "
                      f"p10–p90: {int(np.percentile(_n_train,10)):,}–{int(np.percentile(_n_train,90)):,}",
             )
-            c2.metric(
+            _r1c2.metric(
                 "Providers trained",
                 f"{int(np.median(_n_reached)):,}",
                 help=f"Median providers who received at least one training session. "
                      f"p10–p90: {int(np.percentile(_n_reached,10)):,}–{int(np.percentile(_n_reached,90)):,}",
             )
-            c3.metric(
+            _r2c1.metric(
                 f"Change in % > {mc['threshold']}d gap",
                 f"{_pct_chg:+.1f}%",
                 help=f"Change in the share of providers whose effective gap exceeds {mc['threshold']} days "
                      f"(trained − baseline). Negative = improvement. "
                      f"Baseline: {np.median(_pct_exc_b):.1f}% → Trained: {np.median(_pct_exc_t):.1f}%.",
             )
-            c4.metric(
+            _r2c2.metric(
                 "On-shift readiness",
                 f"{np.median(_lifts):+.1f}%",
                 help=f"Median increase in on-shift readiness vs. no training. "
