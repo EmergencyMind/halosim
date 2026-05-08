@@ -373,13 +373,6 @@ with st.sidebar:
         st.caption("HALO Event Exposure\n& Training Simulation")
 
     st.divider()
-
-    run_btn = st.button("▶ Run Simulation", type="primary", use_container_width=True)
-
-    if st.session_state.mc_ran and st.session_state._last_mc_hash != _mc_hash():
-        st.warning("Settings changed — re-run to update.")
-
-    st.divider()
     _info_c, _about_c = st.columns(2)
     if _info_c.button("Instructions", use_container_width=True):
         st.session_state._show_instructions = True
@@ -396,8 +389,13 @@ if st.session_state.pop("_show_about", False):
 
 
 # ---------------------------------------------------------------------------
-# Result banner
+# Run button + result banner
 # ---------------------------------------------------------------------------
+
+_run_col, _warn_col = st.columns([1, 3])
+run_btn = _run_col.button("▶ Run Simulation", type="primary", use_container_width=True)
+if st.session_state.mc_ran and st.session_state._last_mc_hash != _mc_hash():
+    _warn_col.warning("Settings changed — re-run to update.")
 
 if st.session_state.mc_ran and st.session_state.mc_result is not None:
     _mc = st.session_state.mc_result
@@ -959,14 +957,14 @@ if run_btn or st.session_state.get("_auto_run", False):
 
     if errors:
         for e in errors:
-            st.sidebar.error(e)
+            st.error(e)
         st.stop()
 
     _training_interval = _PROG_INTERVALS.get(_s.training_program, 30)
 
     _fresh_seeds = tuple(int(x) for x in np.random.randint(1000, 10001, _s.mc_n_samples))
 
-    _pbar = st.sidebar.progress(0, text=f"Run 0 of {_s.mc_n_samples}…")
+    _pbar = st.progress(0, text=f"Run 0 of {_s.mc_n_samples}…")
     _mc = _run_mc(
             n_days=_s.n_days,
             providers_tuple=tuple(providers_list),
