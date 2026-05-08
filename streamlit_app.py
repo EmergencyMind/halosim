@@ -340,7 +340,7 @@ Re-run any time you change a parameter. Results can be downloaded as CSV from ea
 @st.dialog("About HaloSim")
 def _dlg_about():
     st.markdown("""
-**HALO events** (High-Acuity, Low-Occurrence) — such as in-hospital cardiac arrests — are rare enough that most providers go extended periods of time between live encounters. This infrequency creates a readiness gap: skills decay between exposures.
+**HALO events** (High-Acuity, Low-Occurrence) — such as in-hospital cardiac arrests — are rare enough that most providers can go extended periods of time between live encounters. This infrequency creates a readiness gap: skills decay between exposures.
 
 **HaloSim** quantifies that gap. Given a provider schedule and an event rate, it simulates how often each provider is on shift when an event occurs, computes the maximum time between exposures, and models how training programs can substitute for live exposure to maintain readiness.
 
