@@ -332,7 +332,7 @@ def _dlg_instructions():
 
 **2. Click ▶ Run Simulation** in the sidebar.
 
-**4. Explore results across two tabs:**
+**3. Explore results across two tabs:**
 - **📊 Exposure** — gap distributions, threshold exceedance, and on-shift readiness over time
 - **🏋️ Training** — how the chosen program shifts gap distributions and readiness vs. no training (only active when a training program is selected)
 
