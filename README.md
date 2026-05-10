@@ -19,70 +19,114 @@ The methodology is based on:
 
 ## Using the app
 
-### 1. Set sidebar parameters
+The app is mobile-responsive. On phones, parameter sections and charts stack vertically;
+on desktop, multi-column layouts are used throughout.
 
-Before running, configure in the **sidebar**:
+### 1. Configure your model (⚙️ Model Parameters tab)
 
-- **Simulation window** — 90 / 180 / 365 / 730 days
+All simulation parameters are set in the **⚙️ Model Parameters** tab, organized into four sections:
+
+**Simulation (1/4)**
+- **Duration** — 90 / 180 / 365 / 730 days
 - **Number of providers** — default 200 (max 5,000)
-- **Random seed** — controls all Poisson sampling and schedule generation; set for reproducibility
-- **Critical threshold (days)** — the maximum acceptable gap between HALO exposures; providers
+- **Critical threshold (days)** — maximum acceptable gap between HALO exposures; providers
   exceeding this are flagged as under-exposed (default 90 days)
-- **Training program** — None / Monthly (28d) / Bi-monthly (56d) / Quarterly (84d) / Custom / Targeted
+- **Number of simulations** — each run draws independent random seeds for event timing and
+  shift assignments; 50 is a good default
 
-### 2. Configure events (Events tab)
+**HALO Events (2/4)**
+- **Generate (Poisson MC)** — draw events from a Poisson model; set events per year
+  (~51/year matches the community hospital rate in PMID: 41633464)
+  - Advanced: adjust % occurring on day vs. night shifts
+- **Upload CSV / Excel** — upload your own event log
 
-**Generate (Poisson MC)** — draw events from a Poisson model:
-- Set **events/year** (slider; ~51/year matches PMID: 41633464 community hospital rate)
-- Advanced settings: adjust % occurring on **day vs. night shifts** (default 50/50)
-- One-click loaders: **Load sample events** (48 events / year) or **Load full demo scenario**
-  (events + schedule pre-loaded, simulation auto-runs)
-
-**Upload CSV / Excel** — upload your own event data.
-
-### 3. Configure schedules (Schedules tab)
-
-**Generate schedules** — randomly generates an independent schedule for each provider:
+**Provider Schedules (3/4)**
+- **Generate schedules** — pick a shift pattern from a button grid:
 
 | Schedule type | Description |
 |---|---|
-| 3/7 Day | 3 randomly placed day shifts per 7-day week, rest off |
-| 3/7 Night | 3 randomly placed night shifts per 7-day week, rest off |
-| 4/7 Day | 4 randomly placed day shifts per 7-day week, rest off |
-| 4/7 Night | 4 randomly placed night shifts per 7-day week, rest off |
-| Progressive (day & night mix) | 3–4 shifts per week, each randomly assigned day or night |
+| 3/7 Day | 3 day shifts per week, rest off |
+| 3/7 Night | 3 night shifts per week, rest off |
+| 4/7 Day | 4 day shifts per week, rest off |
+| 4/7 Night | 4 night shifts per week, rest off |
+| Progressive (day & night mix) | 3–4 shifts/week, mix of day and night |
 | Random | Each day drawn from empirical weights: 25% day, 23% night, 52% off (PMID: 41633464) |
 
-Advanced schedule settings: override with custom % day / % night sliders.
+- Advanced schedule settings: override with custom % day / % night sliders
+- **Upload CSV / Excel** — upload a pre-built schedule
 
-**Upload CSV / Excel** — upload a pre-built schedule.
+**Training Program (4/4)**
 
-### 4. Run
+Choose one program via the 2×2 button grid:
+- **None (exposure only)** — model exposure gap without any training intervention
+- **Monthly (every 30 days)**
+- **Bi-monthly (every 60 days)**
+- **Quarterly (every 91 days)**
 
-Click **▶ Run Simulation** in the sidebar. Results are cached — re-run any time settings change.
-The banner at the top turns **orange** if any setting has changed since the last run.
+Training sessions start on day 14 and repeat at the selected interval. All providers on shift on a
+training day receive a full readiness reset.
 
-### 5. Exposure Analysis tab
+---
 
-- Summary metrics: median exposures / provider, median days between exposures, % exceeding threshold
-- Percentile table (5th / 25th / 50th / 75th / 95th) for max gap, median gap, exposures / provider
-- Charts: exposure count histogram, gap distribution (min / median / max), threshold sweep
-- Individual provider swimlane heatmap
-- Simulated events and schedule detail expanders (with monthly bar chart and heatmap)
-- Downloads: exposure statistics CSV, simulated events CSV, simulated schedules CSV, PDF report
+### 2. Run
 
-### 6. Training Effects tab
+Click **▶ Run Simulation** above the tabs. A progress bar appears next to the button while
+simulations run. A green banner confirms completion; an orange warning appears if any setting
+has changed since the last run.
 
-The training program is selected in the **sidebar** before running. This tab shows:
-- Summary metrics: average readiness with vs. without training
-- Comparison chart: overlay multiple programs on one chart
-  - Pre-populated with "No training" + your selected program
-  - Toggle between **"Use my current settings"** (Custom/Targeted reflect your controls)
-    and **standardised defaults** (all programs use fixed reference intervals for apples-to-apples comparison)
-- Additional controls appear only when relevant:
-  - **Custom**: training interval slider + first training day
-  - **Targeted**: readiness threshold + minimum interval between sessions
-  - **Custom / Targeted / any non-None**: training effectiveness (full reset or partial boost)
+---
+
+### 3. Exposure Analysis (📊 Exposure tab)
+
+Summary metrics (median across all MC runs, with p10–p90 in tooltip):
+- **% exceeding threshold** — share of providers whose maximum gap exceeds the critical threshold
+- **Median inter-exposure gap** — median days between consecutive HALO exposures
+- **Median exposures / provider**
+
+Charts:
+- **Providers with gap > threshold** — threshold sweep showing % of providers exceeding each gap
+  duration; solid line = median, shaded band = p10–p90
+- **On-shift readiness over time** — rolling proportion of on-shift providers within the readiness
+  threshold; solid line = median, shaded band = p10–p90
+- Chart options expander: adjust rolling mean window (1–90 days)
+
+---
+
+### 4. Training Effects (🏋️ Training tab)
+
+Only active when a training program is selected. Shows:
+
+Summary metrics (2×2 grid):
+- **Training sessions** — median number of sessions held across runs
+- **Providers trained** — median providers receiving at least one training session
+- **Change in % > threshold gap** — shift in the share exceeding the critical threshold
+  (trained − baseline; negative = improvement)
+- **On-shift readiness** — median percentage-point increase vs. no training
+
+Charts:
+- **Providers with effective gap > threshold** — baseline (blue) vs. trained (green);
+  effective gap counts both HALO exposures and training sessions as resets
+- **On-shift readiness over time** — baseline vs. trained comparison band
+
+---
+
+### 5. Download Results (⬇️ Download Results tab)
+
+Available after running a simulation:
+
+- **📄 PDF report** — formatted report with simulation parameters, exposure metrics, and
+  charts; includes a training effects section if a program was selected
+- **📦 Raw data (JSON)** — schedules, events, and training assignments for the reference run
+  (seed 0); raw simulation inputs only, no analysis
+
+---
+
+## Sidebar
+
+The sidebar contains:
+- **Instructions** — brief in-app usage guide
+- **About** — overview of HALO events and the project
+- Link to [Sangfroid Labs](https://sangfroid-labs.netlify.app/)
 
 ---
 
@@ -94,7 +138,6 @@ The training program is selected in the **sidebar** before running. This tab sho
 |--------|------|-------|
 | `date` | YYYY-MM-DD | Required |
 | `shift_type` | `day` or `night` | Required |
-| `hour` | integer 0–23 | Optional; enables shift-boundary join (Advanced) |
 
 ### Schedule file (CSV or Excel)
 
@@ -113,16 +156,15 @@ Missing dates for a provider default to `off`. Maximum 5,000 providers.
 `data/sample_events.csv` — 48 synthetic events over 365 days (Poisson, seed 42)  
 `data/sample_schedule.csv` — 20 providers × 365 days
 
-Use **Load sample events** or **Load full demo scenario** (Events tab, Generate mode) to load
-these with one click. "Load full demo scenario" also pre-loads the schedule and auto-runs the
-simulation.
+Upload these via the Upload options in ⚙️ Model Parameters to explore the app with sample data.
 
 ---
 
 ## Reproducibility
 
-Set the **Random seed** in the sidebar to reproduce any result. The seed controls all Poisson
-event generation and schedule randomisation. Results are identical across runs with the same seed.
+The **Number of simulations** setting controls how many independent MC runs are drawn. Each run
+uses a different random seed for event timing and schedule generation. Results are stable across
+runs with sufficient N (≥50 recommended). Individual run seeds are recorded in the raw JSON export.
 
 ---
 
@@ -132,10 +174,6 @@ event generation and schedule randomisation. Results are identical across runs w
   exceeding-90-days figure from PMID: 41633464) because real event timing differs from Poisson.
   Upload your actual event file to reproduce the paper's results.
 - Instances have ~1 GB RAM. Population sizes above ~2,000 providers over 730 days may be slow.
-- Targeted training uses a sequential day-loop and is slower than vectorised modes;
-  expect a few extra seconds for large populations.
-- Readiness is modelled as a binary threshold (ready / not ready). The gap between exposures
-  determines whether a provider remains within threshold.
 
 ---
 
