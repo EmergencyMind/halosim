@@ -169,7 +169,7 @@ runs with sufficient N (≥50 recommended). Individual run seeds are recorded in
 
 If you use HaloSim in research, please cite:
 
-> Walker D, Dworkis D. *HaloSim: HALO Event Exposure & Training Simulation* [software]. Sangfroid Labs; 2026. https://sfl-halosim.streamlit.app/
+> Dworkis DA. *HaloSim: HALO Event Exposure & Training Simulation* [software]. Sangfroid Labs; 2026. https://sfl-halosim.streamlit.app/
 
 ---
 
