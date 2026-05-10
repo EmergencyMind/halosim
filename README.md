@@ -1,10 +1,10 @@
-# HaloSim
+# HALOSim
 
 **HALO Event Exposure & Training Simulation**
 
 Live app: **https://sfl-halosim.streamlit.app/**
 
-HaloSim models how often providers in a clinical setting actually encounter high-acuity
+HALOSim models how often providers in a clinical setting actually encounter high-acuity
 low-occurrence (HALO) events — cardiac arrests, airway emergencies, or any critical event
 that is rare but consequential. It simulates a provider population, assigns shift schedules,
 distributes events across those shifts, and computes each provider's exposure history. A second
@@ -167,9 +167,9 @@ runs with sufficient N (≥50 recommended). Individual run seeds are recorded in
 
 ## Citation
 
-If you use HaloSim in research, please cite:
+If you use HALOSim in research, please cite:
 
-> Dworkis DA. *HaloSim: HALO Event Exposure & Training Simulation* [software]. Sangfroid Labs; 2026. https://sfl-halosim.streamlit.app/
+> Dworkis DA. *HALOSim: HALO Event Exposure & Training Simulation* [software]. Sangfroid Labs; 2026. https://sfl-halosim.streamlit.app/
 
 ---
 

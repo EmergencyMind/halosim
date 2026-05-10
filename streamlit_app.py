@@ -1,5 +1,5 @@
 """
-HaloSim — HALO Event Exposure & Training Simulation
+HALOSim — HALO Event Exposure & Training Simulation
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ ASSETS_DIR = Path(__file__).parent / "assets"
 DATA_DIR   = Path(__file__).parent / "data"
 
 st.set_page_config(
-    page_title="HaloSim",
+    page_title="HALOSim",
     page_icon="https://raw.githubusercontent.com/EmergencyMind/halosim/master/assets/logo.png",
     layout="wide",
     initial_sidebar_state="auto",
@@ -334,7 +334,7 @@ def _run_mc(
 # Sidebar — N runs + Run button only
 # ---------------------------------------------------------------------------
 
-@st.dialog("How to use HaloSim")
+@st.dialog("How to use HALOSim")
 def _dlg_instructions():
     st.markdown("""
 **1. Configure your model** in ⚙️ Model Parameters — four sections:
@@ -352,12 +352,12 @@ def _dlg_instructions():
 Re-run any time you change a parameter. Download a PDF report or the raw simulation data from the **⬇️ Download Results** tab.
 """)
 
-@st.dialog("About HaloSim")
+@st.dialog("About HALOSim")
 def _dlg_about():
     st.markdown("""
 **HALO events** (High-Acuity, Low-Occurrence) — such as in-hospital cardiac arrests — are rare enough that most providers can go extended periods of time between live encounters. This infrequency creates a readiness gap: skills decay between exposures.
 
-**HaloSim** quantifies that gap. Given a provider schedule and an event rate, it simulates how often each provider is on shift when an event occurs, computes the maximum time between exposures, and models how training programs can substitute for live exposure to maintain readiness.
+**HALOSim** quantifies that gap. Given a provider schedule and an event rate, it simulates how often each provider is on shift when an event occurs, computes the maximum time between exposures, and models how training programs can substitute for live exposure to maintain readiness.
 
 The tool accompanies:
 > Walker D et al. *Code Blue blindspots: mapping nursing exposure to cardiac arrests.* Resuscitation. 2026. PMID: 41633464.
@@ -369,7 +369,7 @@ with st.sidebar:
     with _logo_col:
         st.image(str(ASSETS_DIR / "logo.png"), width=56)
     with _title_col:
-        st.markdown("**HaloSim**")
+        st.markdown("**HALOSim**")
         st.caption("HALO Event Exposure\n& Training Simulation")
 
     st.divider()

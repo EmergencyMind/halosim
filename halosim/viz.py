@@ -1,5 +1,5 @@
 """
-viz.py — Plotly chart builders for HaloSim.
+viz.py — Plotly chart builders for HALOSim.
 
 All functions return a plotly Figure object for use with st.plotly_chart().
 No scipy dependency — Plotly violin handles KDE internally.

@@ -1,5 +1,5 @@
 """
-report.py  -  PDF report generator for HaloSim.
+report.py  -  PDF report generator for HALOSim.
 
 Uses fpdf2 for layout and kaleido (via plotly) for chart-to-PNG conversion.
 Returns a bytes object suitable for st.download_button().
@@ -68,7 +68,7 @@ class _HaloReport(FPDF):
     def header(self):
         self.set_font("Helvetica", "B", 8)
         self.set_text_color(*_MUTED_RGB)
-        self.cell(0, 6, "HaloSim  -  HALO Event Exposure & Readiness Report", align="L")
+        self.cell(0, 6, "HALOSim  -  HALO Event Exposure & Readiness Report", align="L")
         self.set_text_color(*_DARK_RGB)
         self.ln(1)
         self.set_draw_color(*_RULE_RGB)
@@ -172,7 +172,7 @@ def generate_pdf(
     # Title
     pdf.set_font("Helvetica", "B", 18)
     pdf.set_text_color(*_DARK_RGB)
-    pdf.cell(0, 10, "HaloSim Exposure & Readiness Report", ln=True)
+    pdf.cell(0, 10, "HALOSim Exposure & Readiness Report", ln=True)
     pdf.set_font("Helvetica", size=9)
     pdf.set_text_color(*_MUTED_RGB)
     pdf.cell(0, 5, f"Generated {params.get('simulation_date', date.today().isoformat())}  ·  "
@@ -329,7 +329,7 @@ def generate_mc_report(mc: dict, params: dict) -> bytes:
 
     pdf.set_font("Helvetica", "B", 18)
     pdf.set_text_color(*_DARK_RGB)
-    pdf.cell(0, 10, "HaloSim Exposure & Readiness Report", ln=True)
+    pdf.cell(0, 10, "HALOSim Exposure & Readiness Report", ln=True)
     pdf.set_font("Helvetica", size=9)
     pdf.set_text_color(*_MUTED_RGB)
     pdf.cell(0, 5,
