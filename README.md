@@ -19,9 +19,6 @@ The methodology is based on:
 
 ## Using the app
 
-The app is mobile-responsive. On phones, parameter sections and charts stack vertically;
-on desktop, multi-column layouts are used throughout.
-
 ### 1. Configure your model (⚙️ Model Parameters tab)
 
 All simulation parameters are set in the **⚙️ Model Parameters** tab, organized into four sections:
@@ -151,15 +148,6 @@ Missing dates for a provider default to `off`. Maximum 5,000 providers.
 
 ---
 
-## Sample data
-
-`data/sample_events.csv` — 48 synthetic events over 365 days (Poisson, seed 42)  
-`data/sample_schedule.csv` — 20 providers × 365 days
-
-Upload these via the Upload options in ⚙️ Model Parameters to explore the app with sample data.
-
----
-
 ## Reproducibility
 
 The **Number of simulations** setting controls how many independent MC runs are drawn. Each run
@@ -181,9 +169,7 @@ runs with sufficient N (≥50 recommended). Individual run seeds are recorded in
 
 If you use HaloSim in research, please cite:
 
-> PMID: 41633464 — *Code Blue blindspots: mapping nursing exposure to cardiac arrests.*
-> Resuscitation. 2026.  
-> HaloSim: https://sfl-halosim.streamlit.app/ (https://github.com/EmergencyMind/halosim)
+> Walker D, Dworkis D. *HaloSim: HALO Event Exposure & Training Simulation* [software]. Sangfroid Labs; 2026. https://sfl-halosim.streamlit.app/
 
 ---
 
