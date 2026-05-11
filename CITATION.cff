@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "HALOSim: HALO Event Exposure & Training Simulation"
+version: 1.1.0
+date-released: "2026-05-10"
+doi: 10.5281/zenodo.20115762
+url: "https://sfl-halosim.streamlit.app/"
+repository-code: "https://github.com/EmergencyMind/halosim"
+license: MIT
+authors:
+  - family-names: Dworkis
+    given-names: Daniel A.
+    affiliation: Sangfroid Labs
+abstract: >
+  HALOSim models how often providers in a clinical setting encounter
+  high-acuity low-occurrence (HALO) events such as cardiac arrests
+  or airway emergencies. Given a provider schedule and an event rate,
+  it simulates exposure history across a population, computes maximum
+  gaps between live encounters, and models how training programs
+  substitute for live exposure to maintain readiness.
+keywords:
+  - simulation
+  - healthcare
+  - resuscitation
+  - nursing
+  - streamlit
+  - halo-events
+  - readiness

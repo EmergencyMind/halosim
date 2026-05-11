@@ -2,6 +2,8 @@
 
 **HALO Event Exposure & Training Simulation**
 
+[![DOI](https://zenodo.org/badge/1212960745.svg)](https://doi.org/10.5281/zenodo.20115762)
+
 Live app: **https://sfl-halosim.streamlit.app/**
 
 HALOSim models how often providers in a clinical setting actually encounter high-acuity
@@ -169,7 +171,7 @@ runs with sufficient N (≥50 recommended). Individual run seeds are recorded in
 
 If you use HALOSim in research, please cite:
 
-> Dworkis DA. *HALOSim: HALO Event Exposure & Training Simulation* [software]. Sangfroid Labs; 2026. https://sfl-halosim.streamlit.app/
+> Dworkis DA. *HALOSim: HALO Event Exposure & Training Simulation* [software]. v1.1. Zenodo; 2026. https://doi.org/10.5281/zenodo.20115762
 
 ---
 
